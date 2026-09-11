@@ -1,0 +1,130 @@
+{
+  "version": "v1.0.0-baseline",
+  "feature_columns": [
+    "scheduled_shipping_days",
+    "product_price",
+    "order_quantity",
+    "order_total",
+    "benefit_per_order",
+    "mode_base_risk",
+    "shipping_mode_Same Day",
+    "shipping_mode_Second Class",
+    "shipping_mode_Standard Class",
+    "customer_segment_Corporate",
+    "customer_segment_Home Office",
+    "category_name_As Seen on  TV!",
+    "category_name_Baby ",
+    "category_name_Baseball & Softball",
+    "category_name_Basketball",
+    "category_name_Books ",
+    "category_name_Boxing & MMA",
+    "category_name_CDs ",
+    "category_name_Cameras ",
+    "category_name_Camping & Hiking",
+    "category_name_Cardio Equipment",
+    "category_name_Children's Clothing",
+    "category_name_Cleats",
+    "category_name_Computers",
+    "category_name_Consumer Electronics",
+    "category_name_Crafts",
+    "category_name_DVDs",
+    "category_name_Electronics",
+    "category_name_Fishing",
+    "category_name_Fitness Accessories",
+    "category_name_Garden",
+    "category_name_Girls' Apparel",
+    "category_name_Golf Balls",
+    "category_name_Health and Beauty",
+    "category_name_Hockey",
+    "category_name_Hunting & Shooting",
+    "category_name_Kids' Golf Clubs",
+    "category_name_Lacrosse",
+    "category_name_Men's Clothing",
+    "category_name_Men's Footwear",
+    "category_name_Music",
+    "category_name_Pet Supplies",
+    "category_name_Shop By Sport",
+    "category_name_Soccer",
+    "category_name_Sporting Goods",
+    "category_name_Strength Training",
+    "category_name_Tennis & Racquet",
+    "category_name_Trade-In",
+    "category_name_Video Games",
+    "category_name_Women's Apparel",
+    "category_name_Women's Clothing",
+    "order_region_Caribbean",
+    "order_region_Central Africa",
+    "order_region_Central America",
+    "order_region_Central Asia",
+    "order_region_East Africa",
+    "order_region_East of USA",
+    "order_region_Eastern Asia",
+    "order_region_Eastern Europe",
+    "order_region_North Africa",
+    "order_region_Northern Europe",
+    "order_region_Oceania",
+    "order_region_South America",
+    "order_region_South Asia",
+    "order_region_South of  USA ",
+    "order_region_Southeast Asia",
+    "order_region_Southern Africa",
+    "order_region_Southern Europe",
+    "order_region_US Center ",
+    "order_region_West Africa",
+    "order_region_West Asia",
+    "order_region_West of USA ",
+    "order_region_Western Europe"
+  ],
+  "metrics": {
+    "version": "v1.0.0-baseline",
+    "roc_auc": 0.7415,
+    "accuracy": 0.6962,
+    "f1_score": 0.67,
+    "mae_days": 0.69,
+    "rmse_days": 0.88,
+    "train_samples": 20000,
+    "test_samples": 5000,
+    "top_features": [
+      {
+        "feature": "scheduled_shipping_days",
+        "importance": 0.29835301637649536
+      },
+      {
+        "feature": "shipping_mode_Standard Class",
+        "importance": 0.20529574155807495
+      },
+      {
+        "feature": "mode_base_risk",
+        "importance": 0.07424282282590866
+      },
+      {
+        "feature": "shipping_mode_Second Class",
+        "importance": 0.05017423629760742
+      },
+      {
+        "feature": "shipping_mode_Same Day",
+        "importance": 0.04038203880190849
+      },
+      {
+        "feature": "customer_segment_Home Office",
+        "importance": 0.017543219029903412
+      },
+      {
+        "feature": "order_region_Southern Europe",
+        "importance": 0.010748447850346565
+      },
+      {
+        "feature": "order_region_South America",
+        "importance": 0.007654555607587099
+      },
+      {
+        "feature": "order_region_Caribbean",
+        "importance": 0.0074845170602202415
+      },
+      {
+        "feature": "category_name_Electronics",
+        "importance": 0.00699327327311039
+      }
+    ]
+  }
+}
