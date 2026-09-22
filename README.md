@@ -5,6 +5,7 @@
 [![PuLP OR](https://img.shields.io/badge/Operations_Research-PuLP_MILP-green.svg)](https://coin-or.github.io/pulp/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit_Clean-red.svg)](https://streamlit.io/)
 [![FastAPI](https://img.shields.io/badge/Write--Back-FastAPI_ACID-teal.svg)](https://fastapi.tiangolo.com/)
+[![Deploy with Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=JakariyaKhan/Closed-Loop-Prescriptive-Analytics&branch=main&mainModule=streamlit_app.py)
 
 **Project 3** from the Advanced Data Analytics enterprise architecture portfolio: **"Supply Prescript" - Closed-Loop Prescriptive Analytics**.
 
