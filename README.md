@@ -88,7 +88,7 @@ python tests/test_pipeline.py
 ### 1. ⚡ Decision Desk (Predict & Prescribe)
 - **Top Operational Metrics**: Monitored shipments, at-risk count, financial loss prevented, and realized ROI.
 - **Shipment Selector**: Choose any delayed shipment with prioritized risk tiers.
-- **Dynamic Constraint Input**: Adjust optional budget cap ($).
+- **Dynamic Constraint Input**: Adjust optional budget cap (₹).
 - **3 Clear Action Cards**:
   - **Option A (Air Freight Expedite)**: Fastest, 0.0 days delay, 99.2% SLA adherence.
   - **Option B (Secondary Supplier Transfer)**: Balanced cost and speed, moderate delay.

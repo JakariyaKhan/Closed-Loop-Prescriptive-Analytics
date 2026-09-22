@@ -131,6 +131,9 @@ df_fleet, analytics = load_data()
 predictor = SupplyChainPredictor()
 predictor.load()
 
+# Currency Conversion Rate
+USD_TO_INR = 83.0  # 1 USD = 83.0 INR
+
 # Header
 st.markdown(f"""
 <div class="header-bar">
@@ -139,6 +142,7 @@ st.markdown(f"""
         <span style="font-size:0.85rem; opacity:0.85;">Closed-Loop Prescriptive Decision Desk</span>
     </div>
     <div>
+        <span class="pill">Currency: <strong style="color:#f59e0b;">INR (₹)</strong></span>
         <span class="pill">Model: <strong style="color:#38bdf8;">{predictor.version}</strong></span>
         <span class="pill">Solver: <strong style="color:#4ade80;">MILP Optimization</strong></span>
         <span class="pill">Storage: <strong style="color:#a78bfa;">ACID SQLite</strong></span>
@@ -166,11 +170,11 @@ with c2:
     """, unsafe_allow_html=True)
 
 with c3:
-    loss_prev = analytics.get("total_loss_prevented", 0.0)
+    loss_prev = analytics.get("total_loss_prevented", 0.0) * USD_TO_INR
     st.markdown(f"""
     <div class="metric-box">
         <div class="metric-label">Financial Loss Prevented</div>
-        <div class="metric-number" style="color:#059669;">${loss_prev:,.0f}</div>
+        <div class="metric-number" style="color:#059669;">₹{loss_prev:,.0f}</div>
     </div>
     """, unsafe_allow_html=True)
 
@@ -214,13 +218,15 @@ with tab_decisions:
     selected_row = df_fleet[df_fleet['shipment_id'] == selected_id].iloc[0]
 
     with col_budget:
-        default_budget = float(max(300.0, round(selected_row['order_total'] * 0.70, 2)))
-        budget_limit = st.number_input(
-            "Budget Cap ($)",
-            min_value=100.0,
-            max_value=10000.0,
-            value=default_budget,
-            step=50.0
+        order_total_inr = float(selected_row['order_total']) * USD_TO_INR
+        default_budget_inr = float(max(10000.0, round(order_total_inr * 0.70, -2)))
+        budget_limit_inr = st.number_input(
+            "Budget Cap (₹)",
+            min_value=5000.0,
+            max_value=2000000.0,
+            value=default_budget_inr,
+            step=1000.0,
+            help="Maximum intervention budget constraint in INR (₹)"
         )
 
     # Clean shipment summary card
@@ -228,7 +234,7 @@ with tab_decisions:
     <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 16px; margin: 10px 0 20px 0; display:flex; justify-content:space-between; flex-wrap:wrap; font-size:0.9rem;">
         <div><strong>Shipment:</strong> <code>{selected_row['shipment_id']}</code></div>
         <div><strong>Category:</strong> {selected_row['category_name']}</div>
-        <div><strong>Order Total:</strong> ${selected_row['order_total']:,.2f}</div>
+        <div><strong>Order Total:</strong> ₹{order_total_inr:,.2f}</div>
         <div><strong>Current Mode:</strong> {selected_row['shipping_mode']}</div>
         <div><strong>Predicted Delay:</strong> <span style="color:#dc2626; font-weight:700;">{selected_row['predicted_delay_days']:.1f} days</span></div>
         <div><strong>Status:</strong> <code>{selected_row['current_status']}</code></div>
@@ -237,14 +243,15 @@ with tab_decisions:
 
     # Solve prescriptions
     solver = PrescriptiveSolver()
+    budget_limit_usd = budget_limit_inr / USD_TO_INR
     result = solver.solve_prescriptions(
         order_total=float(selected_row['order_total']),
         predicted_delay_days=float(selected_row['predicted_delay_days']),
-        max_budget=budget_limit
+        max_budget=budget_limit_usd
     )
 
-    baseline_loss = result['baseline_disruption_cost']
-    st.markdown(f"#### 2. Choose Prescribed Action & Execute *(Unmitigated Loss Risk: :red[${baseline_loss:,.2f}] )*")
+    baseline_loss_inr = result['baseline_disruption_cost'] * USD_TO_INR
+    st.markdown(f"#### 2. Choose Prescribed Action & Execute *(Unmitigated Loss Risk: :red[₹{baseline_loss_inr:,.2f}] )*")
 
     prescriptions = result['prescriptions']
     cols = st.columns(3)
@@ -255,18 +262,20 @@ with tab_decisions:
             card_class = "action-card recommended" if is_rec else "action-card"
             badge = '<span class="badge-optimal">RECOMMENDED</span>' if is_rec else ""
             budget_ok = "✅ Within Budget" if p['satisfies_budget'] else "❌ Over Budget"
+            cost_inr = p['estimated_cost'] * USD_TO_INR
+            savings_inr = p['net_financial_benefit'] * USD_TO_INR
 
             st.markdown(f"""
             <div class="{card_class}">
                 <div>{badge}<strong style="font-size:1.05rem;">{p['title']}</strong></div>
                 <div style="color:#64748b; font-size:0.8rem; margin: 4px 0 10px 0;">Strategy: {p['strategy_type']}</div>
                 <div style="font-size:0.9rem; line-height:1.6;">
-                    <div>• <strong>Expedite Cost:</strong> ${p['estimated_cost']:,.2f}</div>
+                    <div>• <strong>Expedite Cost:</strong> ₹{cost_inr:,.2f}</div>
                     <div>• <strong>Days Saved:</strong> {p['days_saved']:.1f} days (Remaining: {p['expected_delay_days']:.1f}d)</div>
                     <div>• <strong>SLA Adherence:</strong> {p['sla_compliance_rate']}%</div>
-                    <div>• <strong>Net Savings:</strong> <strong style="color:#059669;">+${p['net_financial_benefit']:,.2f}</strong></div>
+                    <div>• <strong>Net Savings:</strong> <strong style="color:#059669;">+₹{savings_inr:,.2f}</strong></div>
                     <div>• <strong>Projected ROI:</strong> <strong style="color:#2563eb;">{p['roi_pct']:.1f}%</strong></div>
-                    <div style="font-size:0.8rem; color:#64748b; margin-top:4px;">{budget_ok} (Cap: ${budget_limit:,.0f})</div>
+                    <div style="font-size:0.8rem; color:#64748b; margin-top:4px;">{budget_ok} (Cap: ₹{budget_limit_inr:,.0f})</div>
                 </div>
             </div>
             """, unsafe_allow_html=True)
@@ -281,7 +290,7 @@ with tab_decisions:
                         approved_cost=p['estimated_cost'],
                         predicted_lead_time_days=p['expected_delay_days'],
                         operator_id="LogisticsOperator",
-                        execution_notes=f"Selected {p['title']} with projected ROI {p['roi_pct']}%"
+                        execution_notes=f"Selected {p['title']} with projected ROI {p['roi_pct']}% (Cost: ₹{cost_inr:,.2f} INR)"
                     )
                     st.success(f"✅ Decision recorded! Shipment status updated to {selected_id}.")
                     st.cache_data.clear()
@@ -290,11 +299,13 @@ with tab_decisions:
 
     # Expandable Full Shipments Pipeline
     with st.expander("📋 Browse All Monitored Shipments", expanded=False):
+        df_browse = df_fleet[['shipment_id', 'risk_tier', 'delay_probability', 'predicted_delay_days', 'order_total', 'category_name', 'shipping_mode', 'current_status']].copy()
+        df_browse['order_total'] = df_browse['order_total'] * USD_TO_INR
         st.dataframe(
-            df_fleet[['shipment_id', 'risk_tier', 'delay_probability', 'predicted_delay_days', 'order_total', 'category_name', 'shipping_mode', 'current_status']].style.format({
+            df_browse.style.format({
                 'delay_probability': '{:.1%}',
                 'predicted_delay_days': '{:.1f} days',
-                'order_total': '${:,.2f}'
+                'order_total': '₹{:,.2f}'
             }),
             use_container_width=True,
             height=280
@@ -343,26 +354,32 @@ with tab_outcomes:
         """, conn)
 
     if not df_outcomes.empty:
-        # Mini Chart: Quoted vs Actual Cost
+        # Mini Chart: Quoted vs Actual Cost (INR)
+        df_cost_chart = df_outcomes.head(15).copy()
+        df_cost_chart['predicted_cost'] = df_cost_chart['predicted_cost'] * USD_TO_INR
+        df_cost_chart['actual_cost'] = df_cost_chart['actual_cost'] * USD_TO_INR
         fig_cost = px.bar(
-            df_outcomes.head(15),
+            df_cost_chart,
             x="shipment_id",
             y=["predicted_cost", "actual_cost"],
             barmode="group",
-            title="Quoted vs Realized Expediting Cost (Tracking Carrier Surcharges)",
-            labels={"value": "Cost ($)", "variable": "Cost Type"},
+            title="Quoted vs Realized Expediting Cost in INR (Tracking Carrier Surcharges)",
+            labels={"value": "Cost (₹)", "variable": "Cost Type"},
             color_discrete_map={"predicted_cost": "#3b82f6", "actual_cost": "#10b981"}
         )
         fig_cost.update_layout(margin=dict(l=10, r=10, t=35, b=10), height=260)
         st.plotly_chart(fig_cost, use_container_width=True)
 
         st.markdown("#### Realized Outcomes Ledger")
+        df_outcomes_disp = df_outcomes.copy()
+        for col in ['predicted_cost', 'actual_cost', 'cost_variance', 'financial_loss_prevented']:
+            df_outcomes_disp[col] = df_outcomes_disp[col] * USD_TO_INR
         st.dataframe(
-            df_outcomes.style.format({
-                'predicted_cost': '${:,.2f}',
-                'actual_cost': '${:,.2f}',
-                'cost_variance': '${:+,.2f}',
-                'financial_loss_prevented': '${:,.2f}',
+            df_outcomes_disp.style.format({
+                'predicted_cost': '₹{:,.2f}',
+                'actual_cost': '₹{:,.2f}',
+                'cost_variance': '₹{:+,.2f}',
+                'financial_loss_prevented': '₹{:,.2f}',
                 'decision_roi_pct': '{:.1f}%',
                 'predicted_delay_days': '{:.1f}d',
                 'actual_delay_days': '{:.1f}d'

@@ -226,7 +226,7 @@ def record_decision_writeback(
         # Record audit log
         cursor.execute(
             "INSERT INTO audit_log (action_type, entity_id, details) VALUES (?, ?, ?)",
-            ("WRITEBACK_DECISION", decision_id, f"Executed {selected_option} for {shipment_id} (Cost: ${approved_cost:.2f})")
+            ("WRITEBACK_DECISION", decision_id, f"Executed {selected_option} for {shipment_id} (Cost: ₹{approved_cost * 83.0:,.2f})")
         )
         
         conn.commit()
