@@ -71,42 +71,30 @@ Interactive Swagger API docs available at: **`http://127.0.0.1:8000/docs`**
 ```bash
 python run.py 3
 # Or directly:
-python -m unittest tests/test_pipeline.py
+python tests/test_pipeline.py
 ```
 
 ---
 
-## 💻 Interface Walkthrough & Key Tabs
+## 💻 Interface Walkthrough: Streamlined 2-Tab Decision Desk
 
-### 1. 🎯 Disruption Radar (Predictive)
-- Real-time fleet pipeline monitoring active shipments.
-- XGBoost delay risk radar, risk tier filters (`CRITICAL`, `HIGH`, `MEDIUM`, `LOW`).
-- Cargo value vs. expected delay duration exposure scatter plot.
+### 1. ⚡ Decision Desk (Predict & Prescribe)
+- **Top Operational Metrics**: Monitored shipments, at-risk count, financial loss prevented, and realized ROI.
+- **Shipment Selector**: Choose any delayed shipment with prioritized risk tiers.
+- **Dynamic Constraint Input**: Adjust optional budget cap ($).
+- **3 Clear Action Cards**:
+  - **Option A (Air Freight Expedite)**: Fastest, 0.0 days delay, 99.2% SLA adherence.
+  - **Option B (Secondary Supplier Transfer)**: Balanced cost and speed, moderate delay.
+  - **Option C (Dynamic Route Buffer)**: Lowest cost alternative for flexible shipments.
+- **🚀 1-Click Execution**: Instantly records decision write-back to the operational database and updates shipment status.
+- **Shipments Pipeline**: Collapsible full table to browse and filter monitored inventory.
 
-### 2. ⚡ Prescriptive Action Center
-- Select any flagged order (e.g. high-value microchips facing a 7-day delay).
-- Set interactive hard business constraints:
-  - **Hard Budget Limit ($)**
-  - **Max Allowable SLA Delay (Days)**
-- Generates **Option A**, **Option B**, and **Option C** cards with real-time trade-offs:
-  - **Option A (Air Freight Expedite)**: 0.0 days delay, 99.2% SLA, expediting cost, calculated ROI.
-  - **Option B (Secondary Supplier Hot-Transfer)**: 1-2 days delay, moderate cost, 91.5% SLA.
-  - **Option C (Dynamic Route Buffer & Multi-Modal)**: Lowest cost, partial schedule absorption.
-- **🚀 Execute Decision Button**: Performs instant write-back to the database, mutating status to `INTERVENED_OPTION_X`.
-
-### 3. 🛡️ Optimization & Constraints Audit
-- Mid-Project Review audit proof.
-- Monte-Carlo testing verifying that the solver **never** recommends an action exceeding the hard budget constraint.
-- Visual proof scatter plot with $y = x$ boundary showing **100% mathematical constraint compliance**.
-
-### 4. 🔄 Closed-Loop ROI & Continuous Learning
-- **Realized Outcome Evaluation**: Compares quoted intervention costs against realized bills (tracking carrier surcharges and actual arrival times).
-- **Decision ROI Analytics**:
-  $$\text{Decision ROI} = \frac{\text{Loss Prevented} - \text{Intervention Cost}}{\text{Intervention Cost}} \times 100\%$$
-- **Continuous Learning Loop**: Retrains the XGBoost model dynamically on outcome feedback, increments model version (e.g. `v1.1.0-closed-loop`), and updates weights.
-
-### 5. 📜 System Audit & Write-Back Log
-- Immutable transactional log of all operator actions, optimization checks, and continuous learning events.
+### 2. 📈 Performance & Closed-Loop ROI
+- **Realized Outcome Evaluation**: 1-click sync comparing quoted costs to realized carrier invoices (surcharges, actual arrival times).
+- **Decision ROI & Savings Tracking**: Realized net financial savings and ROI calculations.
+- **Automated Model Recalibration**: 1-click model update incorporating closed-loop operational feedback.
+- **Quoted vs. Realized Cost Variance Chart**: Visualizing carrier surcharge deviations.
+- **Advanced Diagnostics Expander**: Collapsible section containing mathematical constraint compliance proofs (100% compliance rate, zero budget violations) and live transactional audit logs.
 
 ---
 

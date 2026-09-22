@@ -31,7 +31,7 @@ def main():
         subprocess.run(cmd)
     elif choice == "3" or choice == "--test":
         print("\nRunning test suite...")
-        cmd = [sys.executable, "-m", "unittest", "tests/test_pipeline.py"]
+        cmd = [sys.executable, os.path.join(PROJECT_ROOT, "tests", "test_pipeline.py")]
         subprocess.run(cmd)
     elif choice == "4" or choice == "--seed":
         print("\nRe-seeding database...")
