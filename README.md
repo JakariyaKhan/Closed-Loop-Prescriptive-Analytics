@@ -5,9 +5,11 @@
 [![PuLP OR](https://img.shields.io/badge/Operations_Research-PuLP_MILP-green.svg)](https://coin-or.github.io/pulp/)
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit_Clean-red.svg)](https://streamlit.io/)
 [![FastAPI](https://img.shields.io/badge/Write--Back-FastAPI_ACID-teal.svg)](https://fastapi.tiangolo.com/)
-[![Deploy with Streamlit](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://share.streamlit.io/deploy?repository=JakariyaKhan/Closed-Loop-Prescriptive-Analytics&branch=main&mainModule=streamlit_app.py)
+[![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://jakariyakhan-closed-loop-prescriptive-anal-streamlit-app-ot2bxl.streamlit.app/)
 
 **Project 3** from the Advanced Data Analytics enterprise architecture portfolio: **"Supply Prescript" - Closed-Loop Prescriptive Analytics**.
+
+> 🌐 **Live Interactive App**: [https://jakariyakhan-closed-loop-prescriptive-anal-streamlit-app-ot2bxl.streamlit.app/](https://jakariyakhan-closed-loop-prescriptive-anal-streamlit-app-ot2bxl.streamlit.app/)
 
 ---
 
@@ -51,7 +53,11 @@ graph TD
 
 ## 🚀 Quick Start Guide
 
-### 1. Launch the Clean & Modern Operational UI
+### 🌐 Access Live Cloud App
+Access the deployed live application instantly in your browser:
+👉 **[https://jakariyakhan-closed-loop-prescriptive-anal-streamlit-app-ot2bxl.streamlit.app/](https://jakariyakhan-closed-loop-prescriptive-anal-streamlit-app-ot2bxl.streamlit.app/)**
+
+### 1. Launch the Clean & Modern Operational UI (Local)
 Run the master launcher:
 ```bash
 python run.py 1
