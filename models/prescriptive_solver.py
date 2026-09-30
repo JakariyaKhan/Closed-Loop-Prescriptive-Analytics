@@ -14,6 +14,15 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+def _make_binary_var(name: str, problem: Optional[pulp.LpProblem] = None) -> pulp.LpVariable:
+    """Creates a binary decision variable compatible with both PuLP 2.x and PuLP 3+/4+."""
+    try:
+        return pulp.LpVariable(name, cat=pulp.LpBinary)
+    except TypeError:
+        if problem is not None and hasattr(problem, "add_variable"):
+            return problem.add_variable(name, cat=pulp.LpBinary)
+        return pulp.LpVariable(name, lowBound=0, upBound=1, cat="Binary")
+
 class PrescriptiveSolver:
     def __init__(self):
         # Baseline unit costs for disruption and penalty calculations
@@ -153,7 +162,7 @@ class PrescriptiveSolver:
             feasible_keys = ["STATUS_QUO"]
             
         # Binary decision variables for feasible candidates
-        x_vars = {k: pulp.LpVariable(f"x_{k}", cat=pulp.LpBinary) for k in feasible_keys}
+        x_vars = {k: _make_binary_var(f"x_{k}", prob) for k in feasible_keys}
         
         # Objective Function: Minimize Total Cost (Intervention Cost + Residual Disruption Penalty)
         prob += pulp.lpSum([
@@ -234,6 +243,152 @@ class PrescriptiveSolver:
             "max_budget_limit": max_budget,
             "best_recommended_option": best_recommended_id,
             "prescriptions": prescriptions
+        }
+
+    def solve_portfolio_optimization(
+        self,
+        shipment_items: List[Dict[str, Any]],
+        portfolio_budget: float
+    ) -> Dict[str, Any]:
+        """
+        Solves Fleet-Wide Portfolio Mixed Integer Linear Programming (MILP):
+        Optimally allocates intervention strategies across a portfolio of multiple at-risk shipments
+        simultaneously under a single collective corporate expediting budget constraint.
+
+        Mathematical Formulation:
+          Min Total Portfolio Cost = sum_i sum_k x_{i,k} * (Cost_{i,k} + ResidualPenalty_{i,k})
+          Subject to:
+            - sum_k x_{i,k} = 1 for each shipment i (Exactly one intervention per shipment)
+            - sum_i sum_k (x_{i,k} * Cost_{i,k}) <= portfolio_budget (Fleet-wide Budget Cap)
+            - x_{i,k} in {0, 1}
+        """
+        if not shipment_items:
+            return {
+                "solver_status": "No Shipments",
+                "shipments_count": 0,
+                "portfolio_budget": round(portfolio_budget, 2),
+                "total_allocated_spend": 0.0,
+                "budget_surplus": round(portfolio_budget, 2),
+                "budget_utilized_pct": 0.0,
+                "total_baseline_loss": 0.0,
+                "total_residual_loss": 0.0,
+                "total_loss_prevented": 0.0,
+                "portfolio_roi_pct": 0.0,
+                "allocations": []
+            }
+
+        prob = pulp.LpProblem("Fleet_Portfolio_Prescriptive_Optimization", pulp.LpMinimize)
+        
+        # Build candidate models and decision variables for each shipment
+        shipment_candidates = {}
+        shipment_baselines = {}
+        var_map = {}
+        
+        for idx, item in enumerate(shipment_items):
+            order_total = float(item.get("order_total", 1000.0))
+            delay_days = float(item.get("predicted_delay_days", 3.0))
+            shipment_id = str(item.get("shipment_id", f"SHP-{idx}"))
+            
+            candidates = self.generate_candidate_options(order_total, delay_days)
+            baseline = self.compute_baseline_disruption_cost(order_total, delay_days)
+            
+            shipment_candidates[idx] = {
+                "shipment_id": shipment_id,
+                "order_total": order_total,
+                "predicted_delay_days": delay_days,
+                "category_name": item.get("category_name", "General"),
+                "shipping_mode": item.get("shipping_mode", "Standard Class"),
+                "candidates": candidates
+            }
+            shipment_baselines[idx] = baseline
+            
+            # Binary variables for STATUS_QUO and 3 active intervention options
+            for k in candidates.keys():
+                var_name = f"x_{idx}_{k}"
+                var_map[(idx, k)] = _make_binary_var(var_name, prob)
+                
+            # Constraint: Exactly one intervention strategy per shipment
+            prob += pulp.lpSum([var_map[(idx, k)] for k in candidates.keys()]) == 1, f"Single_Choice_Shipment_{idx}"
+            
+        # Global Fleet Constraint: Total spend across all shipments must not exceed portfolio budget
+        prob += pulp.lpSum([
+            var_map[(idx, k)] * shipment_candidates[idx]["candidates"][k]["cost"]
+            for idx in shipment_candidates
+            for k in shipment_candidates[idx]["candidates"]
+        ]) <= portfolio_budget, "Global_Portfolio_Budget_Constraint"
+        
+        # Objective Function: Minimize total combined intervention costs + residual penalties across fleet
+        prob += pulp.lpSum([
+            var_map[(idx, k)] * (
+                shipment_candidates[idx]["candidates"][k]["cost"] + 
+                shipment_candidates[idx]["candidates"][k]["residual_penalty"]
+            )
+            for idx in shipment_candidates
+            for k in shipment_candidates[idx]["candidates"]
+        ]), "Total_Fleet_Disruption_Cost"
+        
+        # Solve with CBC
+        prob.solve(pulp.PULP_CBC_CMD(msg=False))
+        solver_status = pulp.LpStatus[prob.status]
+        
+        # Compile allocations
+        allocations = []
+        total_allocated_spend = 0.0
+        total_baseline_loss = sum(shipment_baselines.values())
+        total_residual_loss = 0.0
+        
+        for idx, item_data in shipment_candidates.items():
+            chosen_key = "STATUS_QUO"
+            for k in item_data["candidates"]:
+                val = pulp.value(var_map[(idx, k)])
+                if val is not None and round(val) == 1:
+                    chosen_key = k
+                    break
+                    
+            cand = item_data["candidates"][chosen_key]
+            cost = cand["cost"]
+            residual = cand["residual_penalty"]
+            baseline = shipment_baselines[idx]
+            net_save = baseline - (cost + residual)
+            roi = (net_save / cost * 100.0) if cost > 0 else 0.0
+            
+            total_allocated_spend += cost
+            total_residual_loss += residual
+            
+            allocations.append({
+                "shipment_id": item_data["shipment_id"],
+                "category_name": item_data["category_name"],
+                "shipping_mode": item_data["shipping_mode"],
+                "order_total": item_data["order_total"],
+                "predicted_delay_days": item_data["predicted_delay_days"],
+                "baseline_loss": round(baseline, 2),
+                "selected_option": chosen_key,
+                "option_title": cand["title"],
+                "strategy_type": cand["strategy_type"],
+                "allocated_cost": round(cost, 2),
+                "days_saved": cand["days_saved"],
+                "expected_delay_days": cand["expected_delay_days"],
+                "sla_compliance_rate": cand["sla_compliance_rate"],
+                "net_savings": round(net_save, 2),
+                "roi_pct": round(roi, 1)
+            })
+            
+        total_loss_prevented = max(0.0, total_baseline_loss - (total_allocated_spend + total_residual_loss))
+        portfolio_roi = ((total_loss_prevented / total_allocated_spend) * 100.0) if total_allocated_spend > 0 else 0.0
+        budget_util_pct = (total_allocated_spend / portfolio_budget * 100.0) if portfolio_budget > 0 else 0.0
+        
+        return {
+            "solver_status": solver_status,
+            "shipments_count": len(shipment_items),
+            "portfolio_budget": round(portfolio_budget, 2),
+            "total_allocated_spend": round(total_allocated_spend, 2),
+            "budget_surplus": round(max(0.0, portfolio_budget - total_allocated_spend), 2),
+            "budget_utilized_pct": round(budget_util_pct, 1),
+            "total_baseline_loss": round(total_baseline_loss, 2),
+            "total_residual_loss": round(total_residual_loss, 2),
+            "total_loss_prevented": round(total_loss_prevented, 2),
+            "portfolio_roi_pct": round(portfolio_roi, 1),
+            "allocations": allocations
         }
 
 def run_optimization_audit(n_trials: int = 100) -> Dict[str, Any]:

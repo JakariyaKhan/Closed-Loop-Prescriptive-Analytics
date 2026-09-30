@@ -199,20 +199,50 @@ tab_decisions, tab_outcomes = st.tabs([
 # TAB 1: DECISION DESK (Action-Oriented)
 # =============================================================
 with tab_decisions:
-    # High risk shipments list
-    high_risk_list = df_fleet[df_fleet['risk_tier'].isin(['CRITICAL', 'HIGH'])]['shipment_id'].tolist()
-    if not high_risk_list:
-        high_risk_list = df_fleet['shipment_id'].tolist()
+    # Filter controls for prioritized shipment triage
+    st.markdown("#### 1. Filter & Select At-Risk Shipment")
+    f_c1, f_c2 = st.columns([1, 1])
+    with f_c1:
+        tier_filter = st.selectbox(
+            "Filter by Risk Tier:",
+            options=["At-Risk (CRITICAL & HIGH)", "CRITICAL Only", "HIGH Only", "MEDIUM Risk", "All Shipments"],
+            index=0,
+            key="ui_tier_filter"
+        )
+    with f_c2:
+        available_cats = ["All Categories"] + sorted([str(c) for c in df_fleet['category_name'].dropna().unique()])
+        cat_filter = st.selectbox(
+            "Filter by Category:",
+            options=available_cats,
+            index=0,
+            key="ui_cat_filter"
+        )
 
-    st.markdown("#### 1. Select At-Risk Shipment")
-    
+    # Apply filters
+    df_filtered = df_fleet.copy()
+    if tier_filter == "At-Risk (CRITICAL & HIGH)":
+        df_filtered = df_filtered[df_filtered['risk_tier'].isin(['CRITICAL', 'HIGH'])]
+    elif tier_filter == "CRITICAL Only":
+        df_filtered = df_filtered[df_filtered['risk_tier'] == 'CRITICAL']
+    elif tier_filter == "HIGH Only":
+        df_filtered = df_filtered[df_filtered['risk_tier'] == 'HIGH']
+    elif tier_filter == "MEDIUM Risk":
+        df_filtered = df_filtered[df_filtered['risk_tier'] == 'MEDIUM']
+
+    if cat_filter != "All Categories":
+        df_filtered = df_filtered[df_filtered['category_name'] == cat_filter]
+
+    filtered_shipment_list = df_filtered['shipment_id'].tolist()
+    if not filtered_shipment_list:
+        filtered_shipment_list = df_fleet['shipment_id'].tolist()
+
     col_sel, col_budget = st.columns([3, 1])
     with col_sel:
         selected_id = st.selectbox(
-            "Select shipment needing intervention:",
-            options=high_risk_list,
+            f"Select shipment needing intervention ({len(filtered_shipment_list)} available):",
+            options=filtered_shipment_list,
             index=0,
-            help="Showing high-risk shipments prioritized by delay probability."
+            help="Showing shipments prioritized by delay probability and applied filters."
         )
     
     selected_row = df_fleet[df_fleet['shipment_id'] == selected_id].iloc[0]
@@ -308,8 +338,86 @@ with tab_decisions:
                 'order_total': '₹{:,.2f}'
             }),
             use_container_width=True,
-            height=280
+            height=260
         )
+        csv_browse = df_browse.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Export Monitored Shipments (CSV)",
+            data=csv_browse,
+            file_name="monitored_shipments.csv",
+            mime="text/csv",
+            key="dl_monitored_csv"
+        )
+
+    # Fleet Portfolio Batch Optimizer Expander
+    with st.expander("⚡ Fleet Portfolio Prescriptive Optimizer (Multi-Shipment Batch Allocation)", expanded=False):
+        st.markdown("""
+        **Fleet-Wide Mixed Integer Linear Programming (MILP) Optimizer**:
+        Optimally allocate intervention strategies across a cohort of at-risk shipments simultaneously,
+        maximizing total network loss prevention under a unified corporate expediting budget cap.
+        """)
+        
+        batch_c1, batch_c2 = st.columns([1, 1])
+        with batch_c1:
+            batch_count = st.slider("Cohort Size (Top At-Risk Shipments):", min_value=3, max_value=20, value=6, step=1, key="portfolio_slider")
+        with batch_c2:
+            portfolio_budget_inr = st.number_input(
+                "Unified Fleet Budget Cap (₹):",
+                min_value=20000.0,
+                max_value=5000000.0,
+                value=250000.0,
+                step=10000.0,
+                key="portfolio_budget_input",
+                help="Unified corporate budget limit across all selected cohort shipments"
+            )
+            
+        target_batch_df = df_fleet[df_fleet['risk_tier'].isin(['CRITICAL', 'HIGH'])].head(batch_count)
+        if target_batch_df.empty:
+            target_batch_df = df_fleet.head(batch_count)
+            
+        if st.button(f"🎯 Solve Fleet MILP for {len(target_batch_df)} Shipments", key="btn_run_portfolio", type="primary"):
+            batch_items = target_batch_df.to_dict(orient="records")
+            portfolio_budget_usd = portfolio_budget_inr / USD_TO_INR
+            port_res = solver.solve_portfolio_optimization(batch_items, portfolio_budget=portfolio_budget_usd)
+            
+            p_spend_inr = port_res["total_allocated_spend"] * USD_TO_INR
+            p_prev_inr = port_res["total_loss_prevented"] * USD_TO_INR
+            p_surplus_inr = port_res["budget_surplus"] * USD_TO_INR
+            
+            # Fleet KPI summary
+            kpi_c1, kpi_c2, kpi_c3, kpi_c4 = st.columns(4)
+            kpi_c1.metric("Allocated Spend", f"₹{p_spend_inr:,.0f}", f"{port_res['budget_utilized_pct']:.1f}% budget used")
+            kpi_c2.metric("Loss Prevented", f"₹{p_prev_inr:,.0f}")
+            kpi_c3.metric("Budget Surplus", f"₹{p_surplus_inr:,.0f}")
+            kpi_c4.metric("Portfolio ROI", f"{port_res['portfolio_roi_pct']:.1f}%")
+            
+            # Table of allocations
+            df_alloc = pd.DataFrame(port_res["allocations"])
+            df_alloc_disp = df_alloc[['shipment_id', 'category_name', 'order_total', 'predicted_delay_days', 'selected_option', 'option_title', 'allocated_cost', 'days_saved', 'net_savings', 'roi_pct']].copy()
+            df_alloc_disp['order_total'] = df_alloc_disp['order_total'] * USD_TO_INR
+            df_alloc_disp['allocated_cost'] = df_alloc_disp['allocated_cost'] * USD_TO_INR
+            df_alloc_disp['net_savings'] = df_alloc_disp['net_savings'] * USD_TO_INR
+            
+            st.dataframe(
+                df_alloc_disp.style.format({
+                    'order_total': '₹{:,.2f}',
+                    'allocated_cost': '₹{:,.2f}',
+                    'net_savings': '₹{:,.2f}',
+                    'predicted_delay_days': '{:.1f}d',
+                    'days_saved': '{:.1f}d',
+                    'roi_pct': '{:.1f}%'
+                }),
+                use_container_width=True
+            )
+            
+            csv_port = df_alloc_disp.to_csv(index=False).encode('utf-8')
+            st.download_button(
+                label="📥 Export Optimal Batch Prescriptions (CSV)",
+                data=csv_port,
+                file_name="optimal_fleet_prescriptions.csv",
+                mime="text/csv",
+                key="dl_batch_csv"
+            )
 
 # =============================================================
 # TAB 2: PERFORMANCE & CLOSED-LOOP ROI
@@ -354,21 +462,41 @@ with tab_outcomes:
         """, conn)
 
     if not df_outcomes.empty:
-        # Mini Chart: Quoted vs Actual Cost (INR)
-        df_cost_chart = df_outcomes.head(15).copy()
-        df_cost_chart['predicted_cost'] = df_cost_chart['predicted_cost'] * USD_TO_INR
-        df_cost_chart['actual_cost'] = df_cost_chart['actual_cost'] * USD_TO_INR
-        fig_cost = px.bar(
-            df_cost_chart,
-            x="shipment_id",
-            y=["predicted_cost", "actual_cost"],
-            barmode="group",
-            title="Quoted vs Realized Expediting Cost in INR (Tracking Carrier Surcharges)",
-            labels={"value": "Cost (₹)", "variable": "Cost Type"},
-            color_discrete_map={"predicted_cost": "#3b82f6", "actual_cost": "#10b981"}
-        )
-        fig_cost.update_layout(margin=dict(l=10, r=10, t=35, b=10), height=260)
-        st.plotly_chart(fig_cost, use_container_width=True)
+        ch_c1, ch_c2 = st.columns([1, 1])
+        with ch_c1:
+            # Mini Chart: Quoted vs Actual Cost (INR)
+            df_cost_chart = df_outcomes.head(15).copy()
+            df_cost_chart['predicted_cost'] = df_cost_chart['predicted_cost'] * USD_TO_INR
+            df_cost_chart['actual_cost'] = df_cost_chart['actual_cost'] * USD_TO_INR
+            fig_cost = px.bar(
+                df_cost_chart,
+                x="shipment_id",
+                y=["predicted_cost", "actual_cost"],
+                barmode="group",
+                title="Quoted vs Realized Expediting Cost (₹)",
+                labels={"value": "Cost (₹)", "variable": "Cost Type"},
+                color_discrete_map={"predicted_cost": "#3b82f6", "actual_cost": "#10b981"}
+            )
+            fig_cost.update_layout(margin=dict(l=10, r=10, t=35, b=10), height=260)
+            st.plotly_chart(fig_cost, use_container_width=True)
+
+        with ch_c2:
+            # ROI by Strategy Type
+            df_strat_roi = df_outcomes.groupby("option_title", as_index=False).agg(
+                avg_roi=("decision_roi_pct", "mean"),
+                count=("outcome_id", "count")
+            )
+            fig_strat = px.bar(
+                df_strat_roi,
+                x="option_title",
+                y="avg_roi",
+                color="avg_roi",
+                color_continuous_scale="Blues",
+                title="Average Realized Decision ROI (%) by Strategy",
+                labels={"avg_roi": "Average ROI (%)", "option_title": "Intervention Strategy"}
+            )
+            fig_strat.update_layout(margin=dict(l=10, r=10, t=35, b=10), height=260, showlegend=False)
+            st.plotly_chart(fig_strat, use_container_width=True)
 
         st.markdown("#### Realized Outcomes Ledger")
         df_outcomes_disp = df_outcomes.copy()
@@ -386,6 +514,14 @@ with tab_outcomes:
             }),
             use_container_width=True,
             height=250
+        )
+        csv_outcomes = df_outcomes_disp.to_csv(index=False).encode('utf-8')
+        st.download_button(
+            label="📥 Export Realized Outcomes Ledger (CSV)",
+            data=csv_outcomes,
+            file_name="realized_outcomes_ledger.csv",
+            mime="text/csv",
+            key="dl_outcomes_csv"
         )
     else:
         st.info("No outcomes evaluated yet. Click 'Sync & Evaluate Realized Outcomes' to process pending decisions.")

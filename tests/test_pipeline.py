@@ -94,5 +94,37 @@ class TestSupplyPrescriptPipeline(unittest.TestCase):
         self.assertIn("positive_outcome_rate_pct", analytics)
         self.assertIn("avg_decision_roi_pct", analytics)
 
+    def test_06_portfolio_optimization_solver(self):
+        """Verify fleet-wide MILP optimizer allocates interventions without violating global budget."""
+        test_shipments = [
+            {"shipment_id": "SHP-PORT-01", "order_total": 3500.0, "predicted_delay_days": 8.0, "category_name": "Electronics"},
+            {"shipment_id": "SHP-PORT-02", "order_total": 1200.0, "predicted_delay_days": 3.0, "category_name": "Apparel"},
+            {"shipment_id": "SHP-PORT-03", "order_total": 2800.0, "predicted_delay_days": 6.5, "category_name": "Computers"},
+            {"shipment_id": "SHP-PORT-04", "order_total": 950.0,  "predicted_delay_days": 2.0, "category_name": "Footwear"},
+            {"shipment_id": "SHP-PORT-05", "order_total": 4200.0, "predicted_delay_days": 9.0, "category_name": "Industrial"}
+        ]
+        portfolio_budget = 2000.0
+        result = self.solver.solve_portfolio_optimization(test_shipments, portfolio_budget=portfolio_budget)
+        
+        self.assertEqual(result["solver_status"], "Optimal")
+        self.assertEqual(result["shipments_count"], 5)
+        self.assertLessEqual(result["total_allocated_spend"], portfolio_budget + 1e-4)
+        self.assertEqual(len(result["allocations"]), 5)
+        self.assertGreater(result["total_loss_prevented"], 0.0)
+        
+        # Verify each shipment has a valid assigned option
+        valid_options = {"STATUS_QUO", "OPTION_A", "OPTION_B", "OPTION_C"}
+        for alloc in result["allocations"]:
+            self.assertIn(alloc["selected_option"], valid_options)
+
+    def test_07_portfolio_zero_budget_fallback(self):
+        """Verify portfolio optimizer defaults to STATUS_QUO when budget is zero."""
+        test_shipments = [
+            {"shipment_id": "SHP-ZERO-01", "order_total": 2000.0, "predicted_delay_days": 5.0}
+        ]
+        result = self.solver.solve_portfolio_optimization(test_shipments, portfolio_budget=0.0)
+        self.assertEqual(result["total_allocated_spend"], 0.0)
+        self.assertEqual(result["allocations"][0]["selected_option"], "STATUS_QUO")
+
 if __name__ == "__main__":
     unittest.main()

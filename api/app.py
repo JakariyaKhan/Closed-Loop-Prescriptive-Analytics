@@ -14,6 +14,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
     sys.path.insert(0, PROJECT_ROOT)
 
+import pandas as pd
 from database.db_manager import get_connection, record_decision_writeback
 from models.predictive_model import SupplyChainPredictor
 from models.prescriptive_solver import PrescriptiveSolver, run_optimization_audit
@@ -22,7 +23,7 @@ from models.closed_loop import ClosedLoopEngine
 app = FastAPI(
     title="Supply Prescript - Operational API",
     description="Transactional Closed-Loop Prescriptive Analytics Service for Supply Chain Operations",
-    version="1.0.0"
+    version="1.1.0"
 )
 
 class DecisionPayload(BaseModel):
@@ -33,6 +34,20 @@ class DecisionPayload(BaseModel):
     predicted_lead_time_days: float = Field(..., example=0.0)
     operator_id: str = Field(default="LogisticsManager_01", example="LogisticsManager_01")
     execution_notes: Optional[str] = Field(default="Approved via Operational Dashboard", example="Prioritized for high-tier customer")
+
+class ShipmentItem(BaseModel):
+    shipment_id: str = Field(..., example="SHP-2026-10001")
+    order_total: float = Field(..., example=1850.0)
+    predicted_delay_days: float = Field(..., example=4.5)
+    category_name: Optional[str] = Field(default="General", example="Electronics")
+    shipping_mode: Optional[str] = Field(default="Standard Class", example="Standard Class")
+
+class PortfolioPayload(BaseModel):
+    portfolio_budget: float = Field(..., gt=0, example=5000.0, description="Global portfolio budget cap in USD")
+    shipments: List[ShipmentItem]
+
+class BatchDecisionPayload(BaseModel):
+    decisions: List[DecisionPayload]
 
 @app.get("/api/health")
 def health_check():
@@ -148,6 +163,60 @@ def audit_optimization(trials: int = Query(100, ge=10, le=500)):
     """Validates that solver never violates business budget constraints."""
     result = run_optimization_audit(n_trials=trials)
     return result
+
+@app.post("/api/prescriptions/portfolio")
+def optimize_portfolio(payload: PortfolioPayload):
+    """
+    Fleet-Wide Portfolio Mixed Integer Linear Programming (MILP) Optimization.
+    Allocates intervention strategies across multiple at-risk shipments simultaneously
+    to maximize loss prevention under a single collective budget cap.
+    """
+    solver = PrescriptiveSolver()
+    shipment_dicts = [s.model_dump() for s in payload.shipments]
+    result = solver.solve_portfolio_optimization(
+        shipment_items=shipment_dicts,
+        portfolio_budget=payload.portfolio_budget
+    )
+    return result
+
+@app.post("/api/decisions/batch")
+def execute_batch_decisions(payload: BatchDecisionPayload):
+    """Executes multiple operational decisions in a batch write-back transaction."""
+    results = []
+    for d in payload.decisions:
+        try:
+            res = record_decision_writeback(
+                shipment_id=d.shipment_id,
+                selected_option=d.selected_option,
+                option_title=d.option_title,
+                approved_cost=d.approved_cost,
+                predicted_lead_time_days=d.predicted_lead_time_days,
+                operator_id=d.operator_id,
+                execution_notes=d.execution_notes
+            )
+            results.append(res)
+        except Exception as e:
+            results.append({"status": "FAILED", "shipment_id": d.shipment_id, "error": str(e)})
+    return {"status": "SUCCESS", "executed_count": len(results), "decisions": results}
+
+@app.get("/api/export/decisions")
+def export_decisions():
+    """Returns all decision write-backs for export and external auditing."""
+    with get_connection() as conn:
+        df = pd.read_sql_query("SELECT * FROM decision_log ORDER BY execution_timestamp DESC", conn)
+    return {"count": len(df), "records": df.to_dict(orient="records")}
+
+@app.get("/api/export/outcomes")
+def export_outcomes():
+    """Returns all realized outcomes for audit reconciliation."""
+    with get_connection() as conn:
+        df = pd.read_sql_query("""
+            SELECT o.*, d.option_title, d.approved_cost as planned_cost
+            FROM outcomes o
+            LEFT JOIN decision_log d ON o.decision_id = d.decision_id
+            ORDER BY o.outcome_id DESC
+        """, conn)
+    return {"count": len(df), "records": df.to_dict(orient="records")}
 
 @app.post("/api/retrain")
 def trigger_continuous_retrain():

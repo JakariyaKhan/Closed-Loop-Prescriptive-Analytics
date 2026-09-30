@@ -86,21 +86,25 @@ python tests/test_pipeline.py
 ## 💻 Interface Walkthrough: Streamlined 2-Tab Decision Desk
 
 ### 1. ⚡ Decision Desk (Predict & Prescribe)
-- **Top Operational Metrics**: Monitored shipments, at-risk count, financial loss prevented, and realized ROI.
-- **Shipment Selector**: Choose any delayed shipment with prioritized risk tiers.
-- **Dynamic Constraint Input**: Adjust optional budget cap (₹).
+- **Top Operational Metrics**: Monitored shipments, at-risk count, financial loss prevented, and realized ROI in INR (₹).
+- **Interactive Multi-Filter Triage**: Filter selectable shipments by **Risk Tier** (`CRITICAL`, `HIGH`, `MEDIUM`, `All`) and **Product Category**.
+- **Dynamic Constraint Input**: Adjust individual budget cap (₹) per shipment.
 - **3 Clear Action Cards**:
   - **Option A (Air Freight Expedite)**: Fastest, 0.0 days delay, 99.2% SLA adherence.
   - **Option B (Secondary Supplier Transfer)**: Balanced cost and speed, moderate delay.
   - **Option C (Dynamic Route Buffer)**: Lowest cost alternative for flexible shipments.
 - **🚀 1-Click Execution**: Instantly records decision write-back to the operational database and updates shipment status.
-- **Shipments Pipeline**: Collapsible full table to browse and filter monitored inventory.
+- **⚡ Fleet Portfolio Prescriptive Optimizer**: Formulates and solves a multi-shipment MILP knapsack allocation model across a cohort of at-risk shipments simultaneously under a single corporate regional budget cap.
+- **Shipments Pipeline & CSV Export**: Collapsible table to inspect monitored inventory with 1-click CSV export (`monitored_shipments.csv`).
 
 ### 2. 📈 Performance & Closed-Loop ROI
 - **Realized Outcome Evaluation**: 1-click sync comparing quoted costs to realized carrier invoices (surcharges, actual arrival times).
 - **Decision ROI & Savings Tracking**: Realized net financial savings and ROI calculations.
 - **Automated Model Recalibration**: 1-click model update incorporating closed-loop operational feedback.
-- **Quoted vs. Realized Cost Variance Chart**: Visualizing carrier surcharge deviations.
+- **Comparative Visualizations**:
+  - Quoted vs. Realized Expediting Cost (₹) tracking carrier surcharge deviations.
+  - Average Realized Decision ROI (%) stratified by Intervention Strategy.
+- **Audit Trail & CSV Export**: 1-click export of realized outcomes ledger to CSV (`realized_outcomes_ledger.csv`).
 - **Advanced Diagnostics Expander**: Collapsible section containing mathematical constraint compliance proofs (100% compliance rate, zero budget violations) and live transactional audit logs.
 
 ---
@@ -108,13 +112,15 @@ python tests/test_pipeline.py
 ## 🧪 Verification & Test Results
 
 ```
-Ran 5 tests in 0.903s
+Ran 7 tests in 1.091s
 OK
-- test_01_predictive_model_loaded: PASSED (ROC-AUC > 0.74, MAE < 0.70 days)
-- test_02_prescriptive_solver_logic: PASSED (Top 3 Pareto options generated)
-- test_03_optimization_audit_hard_constraint: PASSED (100% compliance rate, 0 violations)
+- test_01_predictive_model_loaded: PASSED (ROC-AUC > 0.65, MAE < 2.0 days)
+- test_02_prescriptive_solver_logic: PASSED (Top 3 Pareto options generated, budget constraints enforced)
+- test_03_optimization_audit_hard_constraint: PASSED (100% compliance rate, 0 violations across randomized trials)
 - test_04_transactional_writeback: PASSED (ACID insert into decision_log & status mutated)
 - test_05_closed_loop_evaluation: PASSED (Outcome evaluation & Decision ROI computed)
+- test_06_portfolio_optimization_solver: PASSED (Fleet-wide MILP allocation under unified budget cap)
+- test_07_portfolio_zero_budget_fallback: PASSED (Zero-budget default to Status Quo with zero spend)
 ```
 
 ---

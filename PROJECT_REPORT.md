@@ -150,7 +150,9 @@ The automated test suite (`tests/test_pipeline.py`) validates the entire pipelin
 | `test_03_optimization_audit_hard_constraint`| Monte Carlo simulation proving 0 budget violations | **PASSED** | 0.35s |
 | `test_04_transactional_writeback` | ACID insert into `decision_log` and status mutation | **PASSED** | 0.15s |
 | `test_05_closed_loop_evaluation` | Realized outcome recording and Decision ROI computation | **PASSED** | 0.22s |
-| **Total** | **5 / 5 Unit & Integration Tests Passed** | **OK** | **1.12s** |
+| `test_06_portfolio_optimization_solver` | Fleet-wide MILP allocation under unified budget constraint | **PASSED** | 0.14s |
+| `test_07_portfolio_zero_budget_fallback` | Zero-budget fallback defaulting to Status Quo with zero spend | **PASSED** | 0.08s |
+| **Total** | **7 / 7 Unit & Integration Tests Passed** | **OK** | **1.09s** |
 
 ---
 
