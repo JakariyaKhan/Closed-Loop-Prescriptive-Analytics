@@ -38,40 +38,67 @@ st.markdown("""
         display: flex;
         align-items: center;
         justify-content: space-between;
-        padding: 1rem 1.5rem;
+        padding: 0.85rem 1.25rem;
         background: #0f172a;
         color: #ffffff;
-        border-radius: 10px;
-        margin-bottom: 1.25rem;
+        border-radius: 8px;
+        margin-bottom: 1rem;
     }
-    .pill {
-        display: inline-block;
-        padding: 0.2rem 0.6rem;
+    .header-title {
+        font-size: 1.2rem;
+        font-weight: 700;
+        letter-spacing: -0.02em;
+        margin: 0;
+        display: flex;
+        align-items: center;
+        gap: 0.5rem;
+    }
+    .header-sub {
+        font-size: 0.8rem;
+        color: #94a3b8;
+    }
+    .status-tag {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.25rem 0.65rem;
         font-size: 0.75rem;
         font-weight: 600;
         border-radius: 9999px;
-        margin-left: 0.35rem;
-        background: #1e293b;
+        background: rgba(30, 41, 59, 0.8);
         border: 1px solid #334155;
+        color: #e2e8f0;
     }
-    .metric-box {
+    .metric-card {
         background: #ffffff;
         border: 1px solid #e2e8f0;
         border-radius: 8px;
-        padding: 0.9rem 1.1rem;
-        box-shadow: 0 1px 2px rgba(0,0,0,0.04);
+        padding: 1rem 1.15rem;
+        box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04);
+        transition: all 0.2s ease;
+    }
+    .metric-card:hover {
+        border-color: #cbd5e1;
+        box-shadow: 0 2px 6px 0 rgba(0, 0, 0, 0.07);
     }
     .metric-label {
-        font-size: 0.75rem;
+        font-size: 0.72rem;
         font-weight: 600;
         text-transform: uppercase;
+        letter-spacing: 0.05em;
         color: #64748b;
-        margin-bottom: 0.2rem;
+        margin-bottom: 0.25rem;
     }
-    .metric-number {
-        font-size: 1.5rem;
+    .metric-value {
+        font-size: 1.55rem;
         font-weight: 700;
+        line-height: 1.2;
         color: #0f172a;
+    }
+    .metric-sub {
+        font-size: 0.75rem;
+        color: #64748b;
+        margin-top: 0.2rem;
     }
     .action-card {
         background: #ffffff;
@@ -138,14 +165,12 @@ USD_TO_INR = 83.0  # 1 USD = 83.0 INR
 st.markdown(f"""
 <div class="header-bar">
     <div>
-        <h3 style="margin:0; font-size:1.3rem; font-weight:700;">📦 Supply Prescript</h3>
-        <span style="font-size:0.85rem; opacity:0.85;">Closed-Loop Prescriptive Decision Desk</span>
+        <div class="header-title">📦 Supply Prescript</div>
+        <div class="header-sub">Operational Prescriptive Decision Desk</div>
     </div>
-    <div>
-        <span class="pill">Currency: <strong style="color:#f59e0b;">INR (₹)</strong></span>
-        <span class="pill">Model: <strong style="color:#38bdf8;">{predictor.version}</strong></span>
-        <span class="pill">Solver: <strong style="color:#4ade80;">MILP Optimization</strong></span>
-        <span class="pill">Storage: <strong style="color:#a78bfa;">ACID SQLite</strong></span>
+    <div style="display:flex; align-items:center; gap:0.5rem;">
+        <span class="status-tag"><span style="color:#22c55e;">●</span> Live System</span>
+        <span class="status-tag">Currency: <strong style="color:#f59e0b;">INR (₹)</strong></span>
     </div>
 </div>
 """, unsafe_allow_html=True)
@@ -154,36 +179,40 @@ st.markdown(f"""
 c1, c2, c3, c4 = st.columns(4)
 with c1:
     st.markdown(f"""
-    <div class="metric-box">
+    <div class="metric-card">
         <div class="metric-label">Monitored Shipments</div>
-        <div class="metric-number">{len(df_fleet):,}</div>
+        <div class="metric-value">{len(df_fleet):,}</div>
+        <div class="metric-sub">Active Fleet Tracking</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c2:
     at_risk = len(df_fleet[df_fleet['risk_tier'].isin(['CRITICAL', 'HIGH'])])
     st.markdown(f"""
-    <div class="metric-box">
+    <div class="metric-card">
         <div class="metric-label">At-Risk Shipments</div>
-        <div class="metric-number" style="color:#dc2626;">{at_risk:,}</div>
+        <div class="metric-value" style="color:#dc2626;">{at_risk:,}</div>
+        <div class="metric-sub">Requires Intervention</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c3:
     loss_prev = analytics.get("total_loss_prevented", 0.0) * USD_TO_INR
     st.markdown(f"""
-    <div class="metric-box">
+    <div class="metric-card">
         <div class="metric-label">Financial Loss Prevented</div>
-        <div class="metric-number" style="color:#059669;">₹{loss_prev:,.0f}</div>
+        <div class="metric-value" style="color:#059669;">₹{loss_prev:,.0f}</div>
+        <div class="metric-sub">Realized Financial Savings</div>
     </div>
     """, unsafe_allow_html=True)
 
 with c4:
     avg_roi = analytics.get("avg_decision_roi_pct", 0.0)
     st.markdown(f"""
-    <div class="metric-box">
+    <div class="metric-card">
         <div class="metric-label">Realized Decision ROI</div>
-        <div class="metric-number" style="color:#2563eb;">{avg_roi:.1f}%</div>
+        <div class="metric-value" style="color:#2563eb;">{avg_roi:.1f}%</div>
+        <div class="metric-sub">Closed-Loop Capital Return</div>
     </div>
     """, unsafe_allow_html=True)
 
