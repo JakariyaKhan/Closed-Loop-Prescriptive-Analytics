@@ -100,6 +100,87 @@ st.markdown("""
         color: #64748b;
         margin-top: 0.2rem;
     }
+    .shipment-summary-card {
+        background: #ffffff;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 1rem 1.25rem;
+        margin: 0.5rem 0 1.25rem 0;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        flex-wrap: wrap;
+        gap: 1rem;
+        box-shadow: 0 1px 2px rgba(0,0,0,0.03);
+    }
+    .summary-left {
+        display: flex;
+        flex-direction: column;
+        gap: 0.35rem;
+    }
+    .summary-id-row {
+        display: flex;
+        align-items: center;
+        gap: 0.6rem;
+    }
+    .shipment-badge {
+        font-family: monospace;
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .risk-badge {
+        font-size: 0.7rem;
+        font-weight: 700;
+        padding: 0.2rem 0.55rem;
+        border-radius: 4px;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+    }
+    .risk-critical { background: #fee2e2; color: #dc2626; border: 1px solid #fecaca; }
+    .risk-high { background: #ffedd5; color: #ea580c; border: 1px solid #fed7aa; }
+    .risk-medium { background: #fef3c7; color: #d97706; border: 1px solid #fde68a; }
+    .risk-low { background: #dcfce7; color: #16a34a; border: 1px solid #bbf7d0; }
+    .status-pill {
+        font-size: 0.72rem;
+        font-weight: 500;
+        padding: 0.15rem 0.5rem;
+        border-radius: 9999px;
+        background: #f1f5f9;
+        color: #475569;
+        border: 1px solid #cbd5e1;
+    }
+    .summary-meta {
+        font-size: 0.82rem;
+        color: #64748b;
+        display: flex;
+        gap: 0.6rem;
+    }
+    .summary-right {
+        display: flex;
+        align-items: center;
+        gap: 1.5rem;
+    }
+    .summary-stat {
+        text-align: right;
+    }
+    .stat-label {
+        font-size: 0.7rem;
+        font-weight: 600;
+        text-transform: uppercase;
+        color: #64748b;
+    }
+    .stat-val {
+        font-size: 1.15rem;
+        font-weight: 700;
+        color: #0f172a;
+    }
+    .stat-danger {
+        color: #dc2626;
+    }
+    .stat-prob {
+        color: #7c3aed;
+    }
     .action-card {
         background: #ffffff;
         border: 1px solid #cbd5e1;
@@ -228,20 +309,20 @@ tab_decisions, tab_outcomes = st.tabs([
 # TAB 1: DECISION DESK (Action-Oriented)
 # =============================================================
 with tab_decisions:
-    # Filter controls for prioritized shipment triage
-    st.markdown("#### 1. Filter & Select At-Risk Shipment")
-    f_c1, f_c2 = st.columns([1, 1])
-    with f_c1:
+    # Unified single-strip triage filter controls
+    st.markdown("#### 1. Prioritized Shipment Triage")
+    c_tier, c_cat, c_sel, c_budget = st.columns([1.1, 1.1, 1.8, 1.1])
+    with c_tier:
         tier_filter = st.selectbox(
-            "Filter by Risk Tier:",
+            "Filter Risk Tier",
             options=["At-Risk (CRITICAL & HIGH)", "CRITICAL Only", "HIGH Only", "MEDIUM Risk", "All Shipments"],
             index=0,
             key="ui_tier_filter"
         )
-    with f_c2:
+    with c_cat:
         available_cats = ["All Categories"] + sorted([str(c) for c in df_fleet['category_name'].dropna().unique()])
         cat_filter = st.selectbox(
-            "Filter by Category:",
+            "Filter Category",
             options=available_cats,
             index=0,
             key="ui_cat_filter"
@@ -265,10 +346,9 @@ with tab_decisions:
     if not filtered_shipment_list:
         filtered_shipment_list = df_fleet['shipment_id'].tolist()
 
-    col_sel, col_budget = st.columns([3, 1])
-    with col_sel:
+    with c_sel:
         selected_id = st.selectbox(
-            f"Select shipment needing intervention ({len(filtered_shipment_list)} available):",
+            f"Active Shipment ({len(filtered_shipment_list)} available)",
             options=filtered_shipment_list,
             index=0,
             help="Showing shipments prioritized by delay probability and applied filters."
@@ -276,7 +356,7 @@ with tab_decisions:
     
     selected_row = df_fleet[df_fleet['shipment_id'] == selected_id].iloc[0]
 
-    with col_budget:
+    with c_budget:
         order_total_inr = float(selected_row['order_total']) * USD_TO_INR
         default_budget_inr = float(max(10000.0, round(order_total_inr * 0.70, -2)))
         budget_limit_inr = st.number_input(
@@ -288,15 +368,36 @@ with tab_decisions:
             help="Maximum intervention budget constraint in INR (₹)"
         )
 
-    # Clean shipment summary card
+    # Clean, modern shipment summary card
+    risk_class = str(selected_row['risk_tier']).lower() if pd.notnull(selected_row['risk_tier']) else 'low'
     st.markdown(f"""
-    <div style="background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:12px 16px; margin: 10px 0 20px 0; display:flex; justify-content:space-between; flex-wrap:wrap; font-size:0.9rem;">
-        <div><strong>Shipment:</strong> <code>{selected_row['shipment_id']}</code></div>
-        <div><strong>Category:</strong> {selected_row['category_name']}</div>
-        <div><strong>Order Total:</strong> ₹{order_total_inr:,.2f}</div>
-        <div><strong>Current Mode:</strong> {selected_row['shipping_mode']}</div>
-        <div><strong>Predicted Delay:</strong> <span style="color:#dc2626; font-weight:700;">{selected_row['predicted_delay_days']:.1f} days</span></div>
-        <div><strong>Status:</strong> <code>{selected_row['current_status']}</code></div>
+    <div class="shipment-summary-card">
+        <div class="summary-left">
+            <div class="summary-id-row">
+                <span class="shipment-badge">{selected_row['shipment_id']}</span>
+                <span class="risk-badge risk-{risk_class}">{selected_row['risk_tier']} RISK</span>
+                <span class="status-pill">{selected_row['current_status']}</span>
+            </div>
+            <div class="summary-meta">
+                <span>Category: <strong>{selected_row['category_name']}</strong></span>
+                <span>•</span>
+                <span>Mode: <strong>{selected_row['shipping_mode']}</strong></span>
+            </div>
+        </div>
+        <div class="summary-right">
+            <div class="summary-stat">
+                <div class="stat-label">Order Value</div>
+                <div class="stat-val">₹{order_total_inr:,.0f}</div>
+            </div>
+            <div class="summary-stat">
+                <div class="stat-label">Predicted Delay</div>
+                <div class="stat-val stat-danger">{selected_row['predicted_delay_days']:.1f} days late</div>
+            </div>
+            <div class="summary-stat">
+                <div class="stat-label">Disruption Probability</div>
+                <div class="stat-val stat-prob">{selected_row['delay_probability']:.1%}</div>
+            </div>
+        </div>
     </div>
     """, unsafe_allow_html=True)
 
