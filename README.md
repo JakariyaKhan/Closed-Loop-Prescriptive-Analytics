@@ -85,27 +85,28 @@ python tests/test_pipeline.py
 
 ## 💻 Interface Walkthrough: Streamlined 2-Tab Decision Desk
 
+The user interface has been refined into a minimalist, clutter-free operational desk designed for high-throughput decision-making:
+
 ### 1. ⚡ Decision Desk (Predict & Prescribe)
-- **Top Operational Metrics**: Monitored shipments, at-risk count, financial loss prevented, and realized ROI in INR (₹).
-- **Interactive Multi-Filter Triage**: Filter selectable shipments by **Risk Tier** (`CRITICAL`, `HIGH`, `MEDIUM`, `All`) and **Product Category**.
-- **Dynamic Constraint Input**: Adjust individual budget cap (₹) per shipment.
-- **3 Clear Action Cards**:
-  - **Option A (Air Freight Expedite)**: Fastest, 0.0 days delay, 99.2% SLA adherence.
-  - **Option B (Secondary Supplier Transfer)**: Balanced cost and speed, moderate delay.
-  - **Option C (Dynamic Route Buffer)**: Lowest cost alternative for flexible shipments.
-- **🚀 1-Click Execution**: Instantly records decision write-back to the operational database and updates shipment status.
-- **⚡ Fleet Portfolio Prescriptive Optimizer**: Formulates and solves a multi-shipment MILP knapsack allocation model across a cohort of at-risk shipments simultaneously under a single corporate regional budget cap.
-- **Shipments Pipeline & CSV Export**: Collapsible table to inspect monitored inventory with 1-click CSV export (`monitored_shipments.csv`).
+- **Minimalist Header & System Status**: Clean top bar with live system status badge, active model version, and INR (₹) currency alignment.
+- **Top Operational KPI Cards**: 4 high-contrast cards tracking monitored fleet count, at-risk shipments requiring intervention, total financial loss prevented, and realized Decision ROI.
+- **Single-Strip Unified Triage**: Streamlined control bar combining **Risk Tier Filter**, **Category Filter**, **Shipment Selector**, and **Budget Cap (₹)** in a single cohesive row.
+- **At-a-Glance Shipment Summary Profile**: Clean card presenting shipment ID, risk tier badge, current state, order total in INR (₹), predicted delay, and disruption probability.
+- **High-Contrast Prescriptive Decision Tiles**:
+  - **Recommended Action Spotlight**: The optimal MILP prescription is highlighted with clear visual priority and a `★ RECOMMENDED` badge.
+  - **Net Financial Benefit & ROI**: Clear hero metrics displaying net savings (+₹) and projected ROI (%) directly up front.
+  - **2x2 Feasibility Grid**: Side-by-side comparison of expedite cost, days saved, SLA adherence rate, and budget feasibility.
+  - **1-Click Transactional Execution**: Direct write-back button executing the chosen action and mutating shipment status in SQLite.
+- **⚡ Fleet Portfolio Batch Optimizer**: Formulates and solves a multi-shipment MILP knapsack allocation across high-risk cohorts under a unified corporate budget limit.
+- **Collapsible Monitored Inventory**: Clean table view with 1-click CSV export (`monitored_shipments.csv`).
 
 ### 2. 📈 Performance & Closed-Loop ROI
 - **Realized Outcome Evaluation**: 1-click sync comparing quoted costs to realized carrier invoices (surcharges, actual arrival times).
-- **Decision ROI & Savings Tracking**: Realized net financial savings and ROI calculations.
-- **Automated Model Recalibration**: 1-click model update incorporating closed-loop operational feedback.
-- **Comparative Visualizations**:
+- **Automated Model Recalibration**: 1-click model update incorporating closed-loop operational feedback into upstream ML models.
+- **Polished Minimalist Visualizations**:
   - Quoted vs. Realized Expediting Cost (₹) tracking carrier surcharge deviations.
   - Average Realized Decision ROI (%) stratified by Intervention Strategy.
-- **Audit Trail & CSV Export**: 1-click export of realized outcomes ledger to CSV (`realized_outcomes_ledger.csv`).
-- **Advanced Diagnostics Expander**: Collapsible section containing mathematical constraint compliance proofs (100% compliance rate, zero budget violations) and live transactional audit logs.
+- **Outcomes Ledger & Audit Proof**: Clean tabular outcome registry with CSV download, plus mathematical compliance proof confirming 100% hard constraint adherence.
 
 ---
 

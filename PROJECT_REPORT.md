@@ -120,15 +120,18 @@ When average cost or delay discrepancy exceeds the drift threshold (15%), the sy
 ## 7. User Experience & Cloud Deployment
 
 ### Simplified 2-Tab Operational Dashboard
-The interface was refactored and streamlined into two cohesive workflows:
+The interface was refactored and streamlined into two cohesive, minimalist workflows:
 1. **⚡ Decision Desk (Predict & Prescribe):**
-   - Live KPI overview (Monitored Shipments, At-Risk Count, Total Loss Prevented, Realized ROI).
-   - Priority-ranked shipment selection dropdown.
-   - 3 actionable decision cards displaying cost, days saved, SLA adherence, and net benefit.
+   - Clean minimalist top bar displaying real-time system status and INR (₹) monetary base.
+   - 4 high-contrast KPI cards (Monitored Fleet, At-Risk Shipments, Financial Loss Prevented, Realized ROI).
+   - Single-strip unified triage bar integrating risk tier, product category, shipment selector, and dynamic budget cap.
+   - At-a-glance shipment summary card with risk badges, cargo value, delay days, and disruption probability.
+   - 3 clean decision tiles highlighting recommended MILP strategy, net financial benefit, projected ROI, and a 2x2 feasibility grid.
    - **1-Click "Execute Decision" Button**: Commits transactional write-back and updates shipment status.
+   - Fleet Portfolio Prescriptive Optimizer for multi-shipment batch allocations under a unified corporate budget limit.
 2. **📈 Performance & Closed-Loop ROI:**
    - Realized outcomes ledger tracking quoted vs. realized carrier invoices.
-   - Interactive bar chart highlighting surcharge discrepancies.
+   - Polished Plotly minimalist charts highlighting surcharge discrepancies and ROI by strategy.
    - 1-click outcome sync and model recalibration controls.
    - Collapsible diagnostics expander for audit proofs and raw transaction logs.
 
