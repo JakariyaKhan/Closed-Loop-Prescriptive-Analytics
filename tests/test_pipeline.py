@@ -126,5 +126,172 @@ class TestSupplyPrescriptPipeline(unittest.TestCase):
         self.assertEqual(result["total_allocated_spend"], 0.0)
         self.assertEqual(result["allocations"][0]["selected_option"], "STATUS_QUO")
 
+    def test_08_solver_nan_resilience_and_sla_constraint(self):
+        """Verify solver gracefully handles NaN/None and enforces max_allowable_delay."""
+        # 1. NaN resilience
+        res_nan = self.solver.solve_prescriptions(order_total=None, predicted_delay_days=float('nan'))
+        self.assertIsNotNone(res_nan["best_recommended_option"])
+        self.assertFalse(np.isnan(res_nan["baseline_disruption_cost"]))
+        for p in res_nan["prescriptions"]:
+            self.assertFalse(np.isnan(p["estimated_cost"]))
+            self.assertFalse(np.isnan(p["roi_pct"]))
+
+        # 2. SLA Constraint (max_allowable_delay=0.0 should only allow zero-delay options like OPTION_A)
+        res_sla = self.solver.solve_prescriptions(
+            order_total=3000.0,
+            predicted_delay_days=6.0,
+            max_budget=2000.0,
+            max_allowable_delay=0.0
+        )
+        self.assertEqual(res_sla["best_recommended_option"], "OPTION_A")
+
+    def test_09_decision_update_resets_outcome(self):
+        """Verify re-deciding a shipment cleanly clears old outcome and allows fresh evaluation."""
+        test_ship = "SHP-2026-10002"
+        # 1. Initial decision: OPTION_B
+        record_decision_writeback(
+            shipment_id=test_ship,
+            selected_option="OPTION_B",
+            option_title="Secondary Supplier Hot-Transfer",
+            approved_cost=300.0,
+            predicted_lead_time_days=1.0,
+            operator_id="Tester1"
+        )
+        # Evaluate outcome
+        self.engine.simulate_and_evaluate_pending_decisions()
+        with get_connection() as conn:
+            row = conn.cursor().execute("SELECT * FROM outcomes WHERE shipment_id = ?", (test_ship,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(float(row['predicted_cost']), 300.0)
+
+        # 2. Update decision: OPTION_A
+        record_decision_writeback(
+            shipment_id=test_ship,
+            selected_option="OPTION_A",
+            option_title="Air Freight Expedite",
+            approved_cost=700.0,
+            predicted_lead_time_days=0.0,
+            operator_id="Tester2"
+        )
+        # Verify old outcome was purged to prevent stale evaluation mismatch
+        with get_connection() as conn:
+            row = conn.cursor().execute("SELECT * FROM outcomes WHERE shipment_id = ?", (test_ship,)).fetchone()
+            self.assertIsNone(row)
+
+        # Re-evaluate
+        evals = self.engine.simulate_and_evaluate_pending_decisions()
+        self.assertTrue(any(e["shipment_id"] == test_ship for e in evals))
+        with get_connection() as conn:
+            row = conn.cursor().execute("SELECT * FROM outcomes WHERE shipment_id = ?", (test_ship,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(float(row['predicted_cost']), 700.0)
+
+    def test_10_status_quo_loss_prevented_zero(self):
+        """Verify choosing STATUS_QUO results in 0 financial loss prevented."""
+        test_ship = "SHP-2026-10003"
+        record_decision_writeback(
+            shipment_id=test_ship,
+            selected_option="STATUS_QUO",
+            option_title="Standard Transit (No Expedite)",
+            approved_cost=0.0,
+            predicted_lead_time_days=5.0,
+            operator_id="Tester3"
+        )
+        self.engine.simulate_and_evaluate_pending_decisions()
+        with get_connection() as conn:
+            row = conn.cursor().execute("SELECT * FROM outcomes WHERE shipment_id = ?", (test_ship,)).fetchone()
+            self.assertIsNotNone(row)
+            self.assertEqual(float(row['actual_cost']), 0.0)
+            self.assertEqual(float(row['financial_loss_prevented']), 0.0)
+            self.assertEqual(float(row['decision_roi_pct']), 0.0)
+
+    def test_11_predict_disruption_raw_dataframe(self):
+        """Verify predictor accepts raw shipment DataFrames with categorical strings."""
+        raw_df = pd.DataFrame([{
+            'shipping_mode': 'Standard Class',
+            'customer_segment': 'Consumer',
+            'category_name': 'Electronics',
+            'order_region': 'North America',
+            'scheduled_shipping_days': 4,
+            'product_price': 150.0,
+            'order_quantity': 2,
+            'order_total': 300.0,
+            'benefit_per_order': 50.0
+        }])
+        proba, days, tiers = self.predictor.predict_disruption(raw_df)
+        self.assertEqual(len(proba), 1)
+        self.assertTrue(0.0 <= proba[0] <= 1.0)
+        self.assertTrue(days[0] >= 0.0)
+        self.assertIn(tiers[0], ["LOW", "MEDIUM", "HIGH", "CRITICAL"])
+
+    def test_12_fastapi_endpoints(self):
+        """Verify all FastAPI REST endpoints execute successfully."""
+        from fastapi.testclient import TestClient
+        from api.app import app
+        client = TestClient(app)
+
+        # Health
+        r = client.get("/api/health")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.json()["status"], "HEALTHY")
+
+        # Shipments filter
+        r = client.get("/api/shipments?risk_filter=critical&limit=10")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("shipments", r.json())
+
+        # Prescriptions
+        ship_id = r.json()["shipments"][0]["shipment_id"]
+        r = client.get(f"/api/prescriptions/{ship_id}")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn("optimization_result", r.json())
+
+        # Portfolio optimization with zero budget
+        port_res = client.post("/api/prescriptions/portfolio", json={
+            "portfolio_budget": 0.0,
+            "shipments": [{"shipment_id": "TEST-1", "order_total": 1000.0, "predicted_delay_days": 3.0}]
+        })
+        self.assertEqual(port_res.status_code, 200)
+        self.assertEqual(port_res.json()["total_allocated_spend"], 0.0)
+
+        # Batch write-back
+        batch_res = client.post("/api/decisions/batch", json={
+            "decisions": [{
+                "shipment_id": ship_id,
+                "selected_option": "OPTION_C",
+                "option_title": "Dynamic Buffer & Re-Routing",
+                "approved_cost": 150.0,
+                "predicted_lead_time_days": 1.5,
+                "operator_id": "ApiBatchTester"
+            }]
+        })
+        self.assertEqual(batch_res.status_code, 200)
+        self.assertEqual(batch_res.json()["status"], "SUCCESS")
+
+        # Exports
+        self.assertEqual(client.get("/api/export/decisions").status_code, 200)
+        self.assertEqual(client.get("/api/export/outcomes").status_code, 200)
+
+    def test_13_continuous_retraining_rescores_pending(self):
+        """Verify closed-loop continuous retraining rescores pending shipments in the database."""
+        retrain_result = self.engine.trigger_continuous_retraining(force=True)
+        self.assertEqual(retrain_result["status"], "RETRAINED")
+        self.assertIn("new_version", retrain_result)
+        
+        # Verify predictions table reflects retrained model version for pending shipments
+        with get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT p.model_version
+                FROM predictions p
+                JOIN shipments s ON p.shipment_id = s.shipment_id
+                WHERE s.current_status = 'PENDING'
+                LIMIT 5
+            """)
+            versions = [row['model_version'] for row in cursor.fetchall()]
+            if versions:
+                for v in versions:
+                    self.assertEqual(v, retrain_result["new_version"])
+
 if __name__ == "__main__":
     unittest.main()

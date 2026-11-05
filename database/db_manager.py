@@ -5,6 +5,8 @@ Handles SQLite transactional storage, operational write-backs, and audit trails.
 
 import os
 import sqlite3
+import uuid
+from contextlib import contextmanager
 import pandas as pd
 from datetime import datetime, timezone
 from typing import List, Dict, Any, Optional
@@ -12,17 +14,22 @@ from typing import List, Dict, Any, Optional
 DB_DIR = os.path.dirname(os.path.abspath(__file__))
 DB_PATH = os.path.join(DB_DIR, "supply_prescript.db")
 
-def get_connection(db_path: str = DB_PATH) -> sqlite3.Connection:
-    """Returns a SQLite connection with row factory enabled."""
-    conn = sqlite3.connect(db_path)
+@contextmanager
+def get_connection(db_path: str = DB_PATH):
+    """Returns a SQLite connection context manager with automatic closing, foreign keys, and timeout enabled."""
+    conn = sqlite3.connect(db_path, timeout=30.0)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA foreign_keys = ON")
-    return conn
+    try:
+        yield conn
+    finally:
+        conn.close()
 
 def initialize_database(db_path: str = DB_PATH) -> None:
     """Initializes the operational database schema."""
     os.makedirs(os.path.dirname(db_path), exist_ok=True)
     with get_connection(db_path) as conn:
+        conn.execute("PRAGMA journal_mode = WAL")
         cursor = conn.cursor()
         
         # 1. Shipments Table
@@ -129,14 +136,22 @@ def initialize_database(db_path: str = DB_PATH) -> None:
         conn.commit()
     print(f"Operational database successfully initialized at {db_path}")
 
-def seed_shipments_from_df(df: pd.DataFrame, limit: int = 500, db_path: str = DB_PATH) -> int:
+def seed_shipments_from_df(df: pd.DataFrame, limit: int = 500, db_path: str = DB_PATH, force: bool = False) -> int:
     """Populates operational shipments table with sample records from preprocessed dataset."""
     with get_connection(db_path) as conn:
         cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) as count FROM shipments")
-        if cursor.fetchone()['count'] > 0:
-            print("Database already contains operational shipments.")
-            return cursor.execute("SELECT COUNT(*) FROM shipments").fetchone()[0]
+        if force:
+            cursor.execute("DELETE FROM outcomes")
+            cursor.execute("DELETE FROM decision_log")
+            cursor.execute("DELETE FROM prescriptions")
+            cursor.execute("DELETE FROM predictions")
+            cursor.execute("DELETE FROM shipments")
+            conn.commit()
+        else:
+            cursor.execute("SELECT COUNT(*) as count FROM shipments")
+            if cursor.fetchone()['count'] > 0:
+                print("Database already contains operational shipments.")
+                return cursor.execute("SELECT COUNT(*) FROM shipments").fetchone()[0]
 
         insert_query = """
         INSERT OR IGNORE INTO shipments (
@@ -191,7 +206,7 @@ def record_decision_writeback(
     Executes an ACID transactional write-back into the operational database.
     Updates the shipment status and logs the intervention decision.
     """
-    decision_id = f"DEC-{int(datetime.now(timezone.utc).timestamp())}-{shipment_id[-5:]}"
+    decision_id = f"DEC-{int(datetime.now(timezone.utc).timestamp())}-{uuid.uuid4().hex[:6]}"
     with get_connection() as conn:
         cursor = conn.cursor()
         
@@ -199,15 +214,17 @@ def record_decision_writeback(
         cursor.execute("SELECT decision_id FROM decision_log WHERE shipment_id = ?", (shipment_id,))
         existing = cursor.fetchone()
         if existing:
-            # Update existing
+            decision_id = existing['decision_id']
+            # Delete any stale outcome evaluation for this shipment so it will be re-evaluated
+            cursor.execute("DELETE FROM outcomes WHERE decision_id = ?", (decision_id,))
+            # Update existing decision record and reset to ACTIVE
             cursor.execute("""
             UPDATE decision_log
             SET selected_option = ?, option_title = ?, approved_cost = ?,
                 predicted_lead_time_days = ?, operator_id = ?, execution_notes = ?,
-                execution_timestamp = CURRENT_TIMESTAMP
+                lifecycle_status = 'ACTIVE', execution_timestamp = CURRENT_TIMESTAMP
             WHERE shipment_id = ?
             """, (selected_option, option_title, approved_cost, predicted_lead_time_days, operator_id, execution_notes, shipment_id))
-            decision_id = existing['decision_id']
         else:
             # Insert transactional record
             cursor.execute("""

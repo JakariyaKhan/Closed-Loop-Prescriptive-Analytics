@@ -6,9 +6,12 @@ to prescribe mathematically optimal intervention alternatives under strict busin
 
 import os
 import sys
+import warnings
 import pulp
 import numpy as np
 from typing import Dict, List, Any, Optional
+
+warnings.filterwarnings("ignore", category=DeprecationWarning, module="pulp.*")
 
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if PROJECT_ROOT not in sys.path:
@@ -16,12 +19,9 @@ if PROJECT_ROOT not in sys.path:
 
 def _make_binary_var(name: str, problem: Optional[pulp.LpProblem] = None) -> pulp.LpVariable:
     """Creates a binary decision variable compatible with both PuLP 2.x and PuLP 3+/4+."""
-    try:
-        return pulp.LpVariable(name, cat=pulp.LpBinary)
-    except TypeError:
-        if problem is not None and hasattr(problem, "add_variable"):
-            return problem.add_variable(name, cat=pulp.LpBinary)
-        return pulp.LpVariable(name, lowBound=0, upBound=1, cat="Binary")
+    if problem is not None and hasattr(problem, "add_variable"):
+        return problem.add_variable(name, lowBound=0, upBound=1, cat=pulp.LpBinary)
+    return pulp.LpVariable(name, lowBound=0, upBound=1, cat=pulp.LpBinary)
 
 class PrescriptiveSolver:
     def __init__(self):
@@ -32,12 +32,14 @@ class PrescriptiveSolver:
 
     def compute_baseline_disruption_cost(self, order_total: float, predicted_delay_days: float) -> float:
         """Calculates expected financial loss if NO intervention is taken (Status Quo)."""
-        if predicted_delay_days <= 0:
+        if predicted_delay_days is None or np.isnan(predicted_delay_days) or predicted_delay_days <= 0:
             return 0.0
+        order_val = 0.0 if (order_total is None or np.isnan(order_total) or order_total <= 0) else float(order_total)
+        delay_val = float(predicted_delay_days)
         return round(
             self.disruption_base_risk + 
-            (self.sla_penalty_per_day * predicted_delay_days) + 
-            (order_total * self.brand_reputation_multiplier * predicted_delay_days), 
+            (self.sla_penalty_per_day * delay_val) + 
+            (order_val * self.brand_reputation_multiplier * delay_val), 
             2
         )
 
@@ -48,27 +50,28 @@ class PrescriptiveSolver:
         - Option B: Secondary Supplier Sourcing (Balanced, Moderate Cost, Minor delay)
         - Option C: Dynamic Buffer & Multi-Modal Re-routing (Budget, Low Cost, Moderate delay)
         """
-        delay = max(1.0, predicted_delay_days)
+        order_val = 0.0 if (order_total is None or np.isnan(order_total) or order_total <= 0) else float(order_total)
+        delay = 1.0 if (predicted_delay_days is None or np.isnan(predicted_delay_days)) else max(1.0, float(predicted_delay_days))
         
         # Option A: Expedited Air Freight
-        cost_a = round(min(5000.0, max(350.0, order_total * 0.28 + 180.0)), 2)
+        cost_a = round(min(5000.0, max(350.0, order_val * 0.28 + 180.0)), 2)
         days_saved_a = round(delay, 1)
         expected_delay_a = 0.0
         sla_rate_a = 99.2
         
         # Option B: Secondary Regional Supplier
-        cost_b = round(min(3200.0, max(220.0, order_total * 0.14 + 110.0)), 2)
+        cost_b = round(min(3200.0, max(220.0, order_val * 0.14 + 110.0)), 2)
         days_saved_b = round(max(0.5, delay * 0.65), 1)
         expected_delay_b = round(max(0.0, delay - days_saved_b), 1)
         sla_rate_b = 91.5
         
         # Option C: Dynamic Re-routing & Schedule Buffer
-        cost_c = round(min(1200.0, max(95.0, order_total * 0.05 + 65.0)), 2)
+        cost_c = round(min(1200.0, max(95.0, order_val * 0.05 + 65.0)), 2)
         days_saved_c = round(max(0.3, delay * 0.35), 1)
         expected_delay_c = round(max(0.0, delay - days_saved_c), 1)
         sla_rate_c = 82.0
         
-        baseline_loss = self.compute_baseline_disruption_cost(order_total, delay)
+        baseline_loss = self.compute_baseline_disruption_cost(order_val, delay)
         
         candidates = {
             "OPTION_A": {
@@ -145,19 +148,28 @@ class PrescriptiveSolver:
           - x_k * Cost_k <= max_budget (Hard Budget Constraint)
           - x_k * Delay_k <= max_allowable_delay (Hard SLA Constraint)
         """
-        candidates = self.generate_candidate_options(order_total, predicted_delay_days)
-        baseline_cost = self.compute_baseline_disruption_cost(order_total, predicted_delay_days)
+        order_val = 0.0 if (order_total is None or np.isnan(order_total) or order_total <= 0) else float(order_total)
+        delay_val = 1.0 if (predicted_delay_days is None or np.isnan(predicted_delay_days)) else max(0.0, float(predicted_delay_days))
+        
+        candidates = self.generate_candidate_options(order_val, delay_val)
+        baseline_cost = self.compute_baseline_disruption_cost(order_val, delay_val)
         
         # Default budget if unspecified: up to 80% of cargo order total or $3500 max
         if max_budget is None:
-            max_budget = max(400.0, min(3500.0, order_total * 0.75))
+            max_budget = max(400.0, min(3500.0, order_val * 0.75))
         if max_allowable_delay is None:
-            max_allowable_delay = max(0.5, predicted_delay_days)
+            max_allowable_delay = max(0.5, delay_val)
             
         prob = pulp.LpProblem("SupplyChain_Prescriptive_Optimization", pulp.LpMinimize)
         
-        # Filter candidate options that satisfy the hard budget constraint
-        feasible_keys = [k for k, v in candidates.items() if v["cost"] <= max_budget]
+        # Filter candidate options that satisfy the hard budget and SLA constraints
+        feasible_keys = [
+            k for k, v in candidates.items()
+            if v["cost"] <= max_budget and (max_allowable_delay is None or v["expected_delay_days"] <= max_allowable_delay)
+        ]
+        if not feasible_keys:
+            # Fallback to candidates satisfying budget alone
+            feasible_keys = [k for k, v in candidates.items() if v["cost"] <= max_budget]
         if not feasible_keys:
             feasible_keys = ["STATUS_QUO"]
             
@@ -184,7 +196,8 @@ class PrescriptiveSolver:
         
         # Find which feasible option was chosen
         for k in feasible_keys:
-            if pulp.value(x_vars[k]) == 1:
+            val = pulp.value(x_vars[k])
+            if val is not None and round(val) == 1:
                 best_recommended_id = k
                 break
                 

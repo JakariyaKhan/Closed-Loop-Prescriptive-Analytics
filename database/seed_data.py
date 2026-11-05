@@ -19,7 +19,7 @@ from models.predictive_model import SupplyChainPredictor
 from models.prescriptive_solver import PrescriptiveSolver
 from models.closed_loop import ClosedLoopEngine
 
-def seed_complete_operational_environment():
+def seed_complete_operational_environment(force: bool = False):
     """Initializes the operational database and populates active and historical data."""
     print("Initializing operational database...")
     initialize_database()
@@ -28,7 +28,7 @@ def seed_complete_operational_environment():
     df, _ = load_and_preprocess_data()
     
     # 1. Seed shipments
-    seeded_count = seed_shipments_from_df(df, limit=350)
+    seeded_count = seed_shipments_from_df(df, limit=350, force=force)
     print(f"Total shipments in DB: {seeded_count}")
     
     # 2. Generate XGBoost predictions
@@ -44,7 +44,7 @@ def seed_complete_operational_environment():
         cursor.execute("SELECT COUNT(*) as cnt FROM predictions")
         existing_pred_count = cursor.fetchone()['cnt']
         
-        if existing_pred_count == 0:
+        if existing_pred_count == 0 or force:
             cursor.execute("SELECT * FROM shipments")
             shipments = cursor.fetchall()
             
@@ -52,25 +52,7 @@ def seed_complete_operational_environment():
             shipment_rows = [dict(s) for s in shipments]
             ship_df = pd.DataFrame(shipment_rows)
             
-            # Match feature formatting
-            pred_input = pd.DataFrame({
-                'scheduled_shipping_days': ship_df['scheduled_shipping_days'],
-                'product_price': ship_df['product_price'],
-                'order_quantity': ship_df['order_quantity'],
-                'order_total': ship_df['order_total'],
-                'benefit_per_order': ship_df['benefit_per_order'],
-                'mode_base_risk': ship_df['shipping_mode'].map({
-                    'Standard Class': 0.60, 'Second Class': 0.40, 'First Class': 0.25, 'Same Day': 0.10
-                }).fillna(0.5)
-            })
-            
-            # One-hot encode matching columns
-            for mode in ['Standard Class', 'Second Class', 'First Class', 'Same Day']:
-                pred_input[f'shipping_mode_{mode}'] = (ship_df['shipping_mode'] == mode).astype(float)
-            for seg in ['Consumer', 'Corporate', 'Home Office']:
-                pred_input[f'customer_segment_{seg}'] = (ship_df['customer_segment'] == seg).astype(float)
-                
-            proba, days, tiers = predictor.predict_disruption(pred_input)
+            proba, days, tiers = predictor.predict_disruption(ship_df)
             
             # Insert predictions
             records = []
@@ -97,7 +79,7 @@ def seed_complete_operational_environment():
         cursor.execute("SELECT COUNT(*) as cnt FROM decision_log")
         existing_decisions = cursor.fetchone()['cnt']
         
-        if existing_decisions == 0:
+        if existing_decisions == 0 or force:
             print("Seeding historical decisions for closed-loop demonstration...")
             # Pick 20 shipments to have completed historical decisions
             cursor.execute("""
@@ -136,4 +118,5 @@ def seed_complete_operational_environment():
             print(f"Evaluated {len(evaluated)} historical outcomes with realized ROI.")
 
 if __name__ == "__main__":
-    seed_complete_operational_environment()
+    force_flag = "--force" in sys.argv or "--reset" in sys.argv
+    seed_complete_operational_environment(force=force_flag)

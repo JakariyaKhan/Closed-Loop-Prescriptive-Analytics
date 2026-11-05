@@ -13,6 +13,9 @@ DATA_PATH = os.path.join(os.path.dirname(__file__), "supply_chain_data.csv")
 
 def load_and_preprocess_data(csv_path: str = DATA_PATH) -> Tuple[pd.DataFrame, Dict[str, Any]]:
     """Loads CSV and applies enterprise supply chain feature engineering."""
+    if not os.path.exists(csv_path):
+        from data.download_dataset import download_and_prepare_dataset
+        download_and_prepare_dataset()
     df = pd.read_csv(csv_path)
     
     # Standardize column naming

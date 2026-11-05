@@ -35,7 +35,7 @@ def main():
         subprocess.run(cmd)
     elif choice == "4" or choice == "--seed":
         print("\nRe-seeding database...")
-        cmd = [sys.executable, "database/seed_data.py"]
+        cmd = [sys.executable, os.path.join(PROJECT_ROOT, "database", "seed_data.py"), "--force"]
         subprocess.run(cmd)
     else:
         print(f"Unknown option: {choice}. Use 1 (UI), 2 (API), 3 (Test), or 4 (Seed).")

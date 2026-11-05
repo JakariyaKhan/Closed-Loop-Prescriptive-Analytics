@@ -7,6 +7,7 @@ audit trails, and closed-loop continuous learning.
 import os
 import sys
 from fastapi import FastAPI, HTTPException, Query, Body
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 
@@ -26,24 +27,32 @@ app = FastAPI(
     version="1.1.0"
 )
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 class DecisionPayload(BaseModel):
-    shipment_id: str = Field(..., example="SHP-2026-10042")
-    selected_option: str = Field(..., example="OPTION_A")
-    option_title: str = Field(..., example="Air Freight Expedite")
-    approved_cost: float = Field(..., example=650.0)
-    predicted_lead_time_days: float = Field(..., example=0.0)
-    operator_id: str = Field(default="LogisticsManager_01", example="LogisticsManager_01")
-    execution_notes: Optional[str] = Field(default="Approved via Operational Dashboard", example="Prioritized for high-tier customer")
+    shipment_id: str = Field(..., examples=["SHP-2026-10042"])
+    selected_option: str = Field(..., examples=["OPTION_A"])
+    option_title: str = Field(..., examples=["Air Freight Expedite"])
+    approved_cost: float = Field(..., examples=[650.0])
+    predicted_lead_time_days: float = Field(..., examples=[0.0])
+    operator_id: str = Field(default="LogisticsManager_01", examples=["LogisticsManager_01"])
+    execution_notes: Optional[str] = Field(default="Approved via Operational Dashboard", examples=["Prioritized for high-tier customer"])
 
 class ShipmentItem(BaseModel):
-    shipment_id: str = Field(..., example="SHP-2026-10001")
-    order_total: float = Field(..., example=1850.0)
-    predicted_delay_days: float = Field(..., example=4.5)
-    category_name: Optional[str] = Field(default="General", example="Electronics")
-    shipping_mode: Optional[str] = Field(default="Standard Class", example="Standard Class")
+    shipment_id: str = Field(..., examples=["SHP-2026-10001"])
+    order_total: float = Field(..., examples=[1850.0])
+    predicted_delay_days: float = Field(..., examples=[4.5])
+    category_name: Optional[str] = Field(default="General", examples=["Electronics"])
+    shipping_mode: Optional[str] = Field(default="Standard Class", examples=["Standard Class"])
 
 class PortfolioPayload(BaseModel):
-    portfolio_budget: float = Field(..., gt=0, example=5000.0, description="Global portfolio budget cap in USD")
+    portfolio_budget: float = Field(..., ge=0, examples=[5000.0], description="Global portfolio budget cap in USD")
     shipments: List[ShipmentItem]
 
 class BatchDecisionPayload(BaseModel):
@@ -73,15 +82,22 @@ def get_shipments(
                    d.selected_option, d.execution_timestamp, d.approved_cost as intervened_cost
             FROM shipments s
             LEFT JOIN predictions p ON s.shipment_id = p.shipment_id
-            LEFT JOIN decision_log d ON s.shipment_id = d.shipment_id
+            LEFT JOIN (
+                SELECT shipment_id, selected_option, execution_timestamp, approved_cost
+                FROM decision_log
+                WHERE rowid IN (
+                    SELECT MAX(rowid) FROM decision_log GROUP BY shipment_id
+                )
+            ) d ON s.shipment_id = d.shipment_id
             WHERE 1=1
         """
         params = []
         if risk_filter:
-            query += " AND p.risk_tier = ?"
-            params.append(risk_filter)
+            query += " AND UPPER(p.risk_tier) = ?"
+            params.append(risk_filter.strip().upper())
         if status_filter:
-            if status_filter == "PENDING":
+            sf = status_filter.strip().upper()
+            if sf == "PENDING":
                 query += " AND s.current_status = 'PENDING'"
             else:
                 query += " AND s.current_status LIKE 'INTERVENED%'"
@@ -219,10 +235,10 @@ def export_outcomes():
     return {"count": len(df), "records": df.to_dict(orient="records")}
 
 @app.post("/api/retrain")
-def trigger_continuous_retrain():
+def trigger_continuous_retrain(force: bool = Query(True, description="Force retrain and rescore pending shipments")):
     """Triggers closed-loop retraining pipeline based on outcome discrepancies."""
     engine = ClosedLoopEngine()
-    result = engine.trigger_continuous_retraining()
+    result = engine.trigger_continuous_retraining(force=force)
     return result
 
 if __name__ == "__main__":

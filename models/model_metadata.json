@@ -1,5 +1,5 @@
 {
-  "version": "v1.0.0-baseline",
+  "version": "v1.1793868448.0-closed-loop",
   "feature_columns": [
     "scheduled_shipping_days",
     "product_price",
@@ -76,7 +76,7 @@
     "order_region_Western Europe"
   ],
   "metrics": {
-    "version": "v1.0.0-baseline",
+    "version": "v1.1793868448.0-closed-loop",
     "roc_auc": 0.7415,
     "accuracy": 0.6962,
     "f1_score": 0.67,

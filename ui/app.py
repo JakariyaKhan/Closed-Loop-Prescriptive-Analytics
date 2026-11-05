@@ -306,12 +306,22 @@ def load_data():
                    d.selected_option, d.option_title as executed_strategy, d.approved_cost as executed_cost
             FROM shipments s
             LEFT JOIN predictions p ON s.shipment_id = p.shipment_id
-            LEFT JOIN decision_log d ON s.shipment_id = d.shipment_id
+            LEFT JOIN (
+                SELECT shipment_id, selected_option, option_title, approved_cost
+                FROM decision_log
+                WHERE rowid IN (
+                    SELECT MAX(rowid) FROM decision_log GROUP BY shipment_id
+                )
+            ) d ON s.shipment_id = d.shipment_id
             ORDER BY p.delay_probability DESC
         """, conn)
     engine = ClosedLoopEngine()
     analytics = engine.get_decision_roi_analytics()
     return df, analytics
+
+@st.cache_data(ttl=120)
+def get_cached_audit_proof(n_trials: int = 50):
+    return run_optimization_audit(n_trials=n_trials)
 
 df_fleet, analytics = load_data()
 
@@ -422,15 +432,18 @@ with tab_decisions:
     if cat_filter != "All Categories":
         df_filtered = df_filtered[df_filtered['category_name'] == cat_filter]
 
+    if df_filtered.empty:
+        st.warning(f"No shipments found matching filters (Risk Tier: {tier_filter}, Category: {cat_filter}). Try selecting 'All Shipments' or 'All Categories'.")
+        st.stop()
+
     filtered_shipment_list = df_filtered['shipment_id'].tolist()
-    if not filtered_shipment_list:
-        filtered_shipment_list = df_fleet['shipment_id'].tolist()
 
     with c_sel:
         selected_id = st.selectbox(
             f"Active Shipment ({len(filtered_shipment_list)} available)",
             options=filtered_shipment_list,
             index=0,
+            key="ui_selected_shipment",
             help="Showing shipments prioritized by delay probability and applied filters."
         )
     
@@ -438,13 +451,16 @@ with tab_decisions:
 
     with c_budget:
         order_total_inr = float(selected_row['order_total']) * USD_TO_INR
-        default_budget_inr = float(max(10000.0, round(order_total_inr * 0.70, -2)))
+        min_budget_inr = 5000.0
+        max_budget_inr = 2000000.0
+        default_budget_inr = min(max_budget_inr, max(min_budget_inr, float(round(order_total_inr * 0.70, -2))))
         budget_limit_inr = st.number_input(
             "Budget Cap (₹)",
-            min_value=5000.0,
-            max_value=2000000.0,
+            min_value=min_budget_inr,
+            max_value=max_budget_inr,
             value=default_budget_inr,
             step=1000.0,
+            key=f"budget_{selected_id}",
             help="Maximum intervention budget constraint in INR (₹)"
         )
 
@@ -484,14 +500,18 @@ with tab_decisions:
     # Solve prescriptions
     solver = PrescriptiveSolver()
     budget_limit_usd = budget_limit_inr / USD_TO_INR
+    pred_delay = float(selected_row['predicted_delay_days']) if pd.notnull(selected_row['predicted_delay_days']) else 3.0
     result = solver.solve_prescriptions(
         order_total=float(selected_row['order_total']),
-        predicted_delay_days=float(selected_row['predicted_delay_days']),
+        predicted_delay_days=pred_delay,
         max_budget=budget_limit_usd
     )
 
     baseline_loss_inr = result['baseline_disruption_cost'] * USD_TO_INR
     st.markdown(f"#### 2. Choose Prescribed Action & Execute *(Unmitigated Loss Risk: :red[₹{baseline_loss_inr:,.2f}] )*")
+
+    if result.get("best_recommended_option") == "STATUS_QUO":
+        st.info(f"ℹ️ **Prescriptive Recommendation**: Under budget cap ₹{budget_limit_inr:,.0f}, active expediting exceeds the cost threshold. **Standard Transit (Status Quo)** is mathematically optimal.")
 
     prescriptions = result['prescriptions']
     cols = st.columns(3)
@@ -549,7 +569,7 @@ with tab_decisions:
 
             btn_label = f"⚡ Execute {p['title']}" if is_rec else f"Execute {p['title']}"
             btn_type = "primary" if is_rec else "secondary"
-            if st.button(btn_label, key=f"exec_{p['option_id']}", use_container_width=True, type=btn_type):
+            if st.button(btn_label, key=f"exec_{selected_id}_{p['option_id']}", use_container_width=True, type=btn_type):
                 with st.spinner("Writing decision back to operational database..."):
                     res = record_decision_writeback(
                         shipment_id=selected_id,
@@ -564,6 +584,23 @@ with tab_decisions:
                     st.cache_data.clear()
                     time.sleep(0.3)
                     st.rerun()
+
+    if result.get("best_recommended_option") == "STATUS_QUO":
+        if st.button("📋 Confirm Standard Transit (Status Quo - No Expediting)", key=f"exec_{selected_id}_STATUS_QUO", use_container_width=True):
+            with st.spinner("Recording Status Quo operational baseline..."):
+                record_decision_writeback(
+                    shipment_id=selected_id,
+                    selected_option="STATUS_QUO",
+                    option_title="Standard Transit (No Expedite)",
+                    approved_cost=0.0,
+                    predicted_lead_time_days=pred_delay,
+                    operator_id="LogisticsOperator",
+                    execution_notes=f"Approved Status Quo under budget cap ₹{budget_limit_inr:,.0f}"
+                )
+                st.success("✅ Recorded Status Quo decision!")
+                st.cache_data.clear()
+                time.sleep(0.3)
+                st.rerun()
 
     # Expandable Full Shipments Pipeline
     with st.expander("📋 Browse All Monitored Shipments", expanded=False):
@@ -617,7 +654,10 @@ with tab_decisions:
             batch_items = target_batch_df.to_dict(orient="records")
             portfolio_budget_usd = portfolio_budget_inr / USD_TO_INR
             port_res = solver.solve_portfolio_optimization(batch_items, portfolio_budget=portfolio_budget_usd)
-            
+            st.session_state["portfolio_result"] = port_res
+
+        if "portfolio_result" in st.session_state:
+            port_res = st.session_state["portfolio_result"]
             p_spend_inr = port_res["total_allocated_spend"] * USD_TO_INR
             p_prev_inr = port_res["total_loss_prevented"] * USD_TO_INR
             p_surplus_inr = port_res["budget_surplus"] * USD_TO_INR
@@ -649,13 +689,34 @@ with tab_decisions:
             )
             
             csv_port = df_alloc_disp.to_csv(index=False).encode('utf-8')
-            st.download_button(
-                label="📥 Export Optimal Batch Prescriptions (CSV)",
-                data=csv_port,
-                file_name="optimal_fleet_prescriptions.csv",
-                mime="text/csv",
-                key="dl_batch_csv"
-            )
+            col_b1, col_b2 = st.columns([1, 1])
+            with col_b1:
+                st.download_button(
+                    label="📥 Export Optimal Batch Prescriptions (CSV)",
+                    data=csv_port,
+                    file_name="optimal_fleet_prescriptions.csv",
+                    mime="text/csv",
+                    key="dl_batch_csv",
+                    use_container_width=True
+                )
+            with col_b2:
+                if st.button("⚡ Execute All Optimal Cohort Interventions", key="btn_exec_cohort", type="primary", use_container_width=True):
+                    with st.spinner("Executing cohort decisions in operational database..."):
+                        for alloc in port_res["allocations"]:
+                            record_decision_writeback(
+                                shipment_id=alloc["shipment_id"],
+                                selected_option=alloc["selected_option"],
+                                option_title=alloc["option_title"],
+                                approved_cost=float(alloc["allocated_cost"]),
+                                predicted_lead_time_days=float(alloc["expected_delay_days"]),
+                                operator_id="BatchFleetOptimizer",
+                                execution_notes=f"Approved fleet allocation via MILP (Portfolio Budget: ₹{portfolio_budget_inr:,.0f})"
+                            )
+                        st.success(f"✅ Successfully executed all {len(port_res['allocations'])} cohort decisions!")
+                        del st.session_state["portfolio_result"]
+                        st.cache_data.clear()
+                        time.sleep(0.3)
+                        st.rerun()
 
 # =============================================================
 # TAB 2: PERFORMANCE & CLOSED-LOOP ROI
@@ -778,7 +839,7 @@ with tab_outcomes:
 
     # Collapsible Section for Technical Diagnostics & Audit
     with st.expander("🛠️ Advanced Solver Diagnostics & Audit Trail", expanded=False):
-        audit_res = run_optimization_audit(n_trials=50)
+        audit_res = get_cached_audit_proof(n_trials=50)
         
         diag_c1, diag_c2, diag_c3, diag_c4 = st.columns(4)
         diag_c1.metric("Formal Verdict", str(audit_res['verdict']))

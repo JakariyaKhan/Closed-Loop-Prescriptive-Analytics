@@ -57,20 +57,19 @@ class ClosedLoopEngine:
                 # Real-world outcome realization with realistic market variance:
                 # E.g. Fuel surcharges, carrier capacity crunches, weather deviations
                 if opt == "OPTION_A": # Air Freight
-                    # Real freight bill usually has 5% to 18% variance (fuel/surcharge)
-                    cost_multiplier = np.random.choice([1.02, 1.08, 1.15, 1.20, 0.98], p=[0.3, 0.35, 0.2, 0.1, 0.05])
+                    cost_multiplier = float(np.random.choice([1.02, 1.08, 1.15, 1.20, 0.98], p=[0.3, 0.35, 0.2, 0.1, 0.05]))
                     actual_cost = round(pred_cost * cost_multiplier, 2)
                     actual_delay = 0.0 # 99% on time
                     sla_breached = 0
                 elif opt == "OPTION_B": # Secondary Supplier
-                    cost_multiplier = np.random.choice([1.0, 1.05, 1.12, 1.18], p=[0.4, 0.35, 0.15, 0.1])
+                    cost_multiplier = float(np.random.choice([1.0, 1.05, 1.12, 1.18], p=[0.4, 0.35, 0.15, 0.1]))
                     actual_cost = round(pred_cost * cost_multiplier, 2)
-                    actual_delay = round(max(0.0, pred_delay + np.random.choice([0.0, 0.5, 1.0], p=[0.7, 0.2, 0.1])), 1)
+                    actual_delay = round(max(0.0, pred_delay + float(np.random.choice([0.0, 0.5, 1.0], p=[0.7, 0.2, 0.1]))), 1)
                     sla_breached = 1 if actual_delay > 1.5 else 0
                 elif opt == "OPTION_C": # Route Buffer
-                    cost_multiplier = np.random.choice([1.0, 1.05, 1.10], p=[0.6, 0.3, 0.1])
+                    cost_multiplier = float(np.random.choice([1.0, 1.05, 1.10], p=[0.6, 0.3, 0.1]))
                     actual_cost = round(pred_cost * cost_multiplier, 2)
-                    actual_delay = round(max(0.0, pred_delay + np.random.choice([0.0, 1.0, 2.0], p=[0.6, 0.25, 0.15])), 1)
+                    actual_delay = round(max(0.0, pred_delay + float(np.random.choice([0.0, 1.0, 2.0], p=[0.6, 0.25, 0.15]))), 1)
                     sla_breached = 1 if actual_delay > 3.0 else 0
                 else: # STATUS_QUO
                     actual_cost = 0.0
@@ -80,14 +79,16 @@ class ClosedLoopEngine:
                 cost_var = round(actual_cost - pred_cost, 2)
                 delay_var = round(actual_delay - pred_delay, 1)
                 
-                # Financial loss prevented: baseline unmitigated loss - actual cost incurred
-                loss_prevented = max(0.0, round(baseline_loss - actual_cost, 2))
-                
-                # Decision ROI: (Loss Prevented / Actual Cost) * 100
-                if actual_cost > 0:
-                    roi_pct = round((loss_prevented / actual_cost) * 100, 1)
+                # Financial loss prevented:
+                # If STATUS_QUO: No intervention taken, baseline unmitigated loss occurred, so loss prevented is 0.0.
+                # If intervention taken: baseline unmitigated loss minus residual delay loss minus actual cost.
+                if opt == "STATUS_QUO":
+                    loss_prevented = 0.0
+                    roi_pct = 0.0
                 else:
-                    roi_pct = 0.0 if sla_breached else 100.0
+                    residual_loss = round(250.0 + (actual_delay * 120.0) + (order_total * 0.08 * actual_delay), 2) if actual_delay > 0 else 0.0
+                    loss_prevented = max(0.0, round(baseline_loss - residual_loss - actual_cost, 2))
+                    roi_pct = round((loss_prevented / actual_cost) * 100, 1) if actual_cost > 0 else 0.0
 
                 cursor.execute("""
                     INSERT INTO outcomes (
@@ -188,7 +189,7 @@ class ClosedLoopEngine:
         Continuously closes the loop:
         1. Checks outcome discrepancies.
         2. Retrains the XGBoost model incorporating the newest ground truth.
-        3. Updates model version and logs to the audit trail.
+        3. Updates model version, rescores pending shipments in the database, and logs to the audit trail.
         """
         analytics = self.get_decision_roi_analytics()
         avg_var = abs(analytics.get("avg_cost_variance", 0.0))
@@ -198,12 +199,29 @@ class ClosedLoopEngine:
         X, y_c, y_r, _ = prepare_model_features(df)
         
         predictor = SupplyChainPredictor()
-        new_version = f"v1.{int(datetime.now().timestamp() % 1000)}.0-closed-loop"
+        new_version = f"v1.{int(datetime.now(timezone.utc).timestamp())}.0-closed-loop"
         retrained_metrics = predictor.train(X, y_c, y_r, version=new_version)
         
-        # Update outcomes to LEARNED
+        # Rescore pending shipments and update outcomes to LEARNED
+        rescored_count = 0
         with get_connection() as conn:
             cursor = conn.cursor()
+            cursor.execute("SELECT * FROM shipments WHERE current_status = 'PENDING'")
+            pending_shipments = [dict(r) for r in cursor.fetchall()]
+            if pending_shipments:
+                pending_df = pd.DataFrame(pending_shipments)
+                proba, days, tiers = predictor.predict_disruption(pending_df)
+                update_records = [
+                    (float(proba[i]), float(days[i]), tiers[i], new_version, row['shipment_id'])
+                    for i, row in enumerate(pending_shipments)
+                ]
+                cursor.executemany("""
+                    UPDATE predictions
+                    SET delay_probability = ?, predicted_delay_days = ?, risk_tier = ?, model_version = ?, created_at = CURRENT_TIMESTAMP
+                    WHERE shipment_id = ?
+                """, update_records)
+                rescored_count = len(update_records)
+
             cursor.execute("UPDATE outcomes SET feedback_status = 'LEARNED' WHERE feedback_status = 'UNREVIEWED'")
             cursor.execute("""
                 INSERT INTO audit_log (action_type, entity_id, details)
@@ -211,7 +229,7 @@ class ClosedLoopEngine:
             """, (
                 "CONTINUOUS_LEARNING_RETRAIN",
                 new_version,
-                f"Model retrained based on closed loop feedback. New ROC-AUC={retrained_metrics['roc_auc']}, MAE={retrained_metrics['mae_days']}d."
+                f"Model retrained based on closed loop feedback. New ROC-AUC={retrained_metrics['roc_auc']}, MAE={retrained_metrics['mae_days']}d. Rescored {rescored_count} pending shipments."
             ))
             conn.commit()
             
@@ -219,6 +237,7 @@ class ClosedLoopEngine:
             "status": "RETRAINED",
             "new_version": new_version,
             "metrics": retrained_metrics,
+            "rescored_shipments": rescored_count,
             "message": f"Continuous Learning loop complete. Model updated to {new_version}."
         }
 

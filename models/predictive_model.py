@@ -112,15 +112,34 @@ class SupplyChainPredictor:
         - Delay probability (0.0 to 1.0)
         - Predicted delay days (0.0 to N days)
         - Risk Tier ('LOW', 'MEDIUM', 'HIGH', 'CRITICAL')
+        Accepts both raw shipment DataFrames (with categorical strings) and encoded DataFrames.
         """
         if self.clf is None or self.reg is None:
             self.load()
             
-        # Align columns
-        aligned_X = pd.DataFrame(0.0, index=X_input.index, columns=self.feature_columns)
-        for col in X_input.columns:
+        X_df = X_input.copy()
+        
+        # Ensure mode_base_risk exists if shipping_mode is present
+        if 'mode_base_risk' not in X_df.columns and 'shipping_mode' in X_df.columns:
+            mode_risk_map = {
+                'Standard Class': 0.60,
+                'Second Class': 0.40,
+                'First Class': 0.25,
+                'Same Day': 0.10
+            }
+            X_df['mode_base_risk'] = X_df['shipping_mode'].map(mode_risk_map).fillna(0.50)
+            
+        # Dummy encode any categorical columns present
+        cat_cols = [c for c in ['shipping_mode', 'customer_segment', 'category_name', 'order_region'] if c in X_df.columns]
+        if cat_cols:
+            df_dummies = pd.get_dummies(X_df[cat_cols], drop_first=True, dtype=float)
+            X_df = pd.concat([X_df.drop(columns=cat_cols), df_dummies], axis=1)
+            
+        # Align columns with self.feature_columns
+        aligned_X = pd.DataFrame(0.0, index=X_df.index, columns=self.feature_columns)
+        for col in X_df.columns:
             if col in self.feature_columns:
-                aligned_X[col] = X_input[col]
+                aligned_X[col] = pd.to_numeric(X_df[col], errors='coerce').fillna(0.0)
                 
         proba = self.clf.predict_proba(aligned_X)[:, 1]
         days = self.reg.predict(aligned_X).clip(min=0)
