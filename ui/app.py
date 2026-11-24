@@ -261,27 +261,6 @@ st.markdown("""
         font-weight: 600;
         color: #0f172a;
     }
-    .action-card {
-        background: #ffffff;
-        border: 1px solid #cbd5e1;
-        border-radius: 8px;
-        padding: 1.1rem;
-        margin-bottom: 0.75rem;
-        height: 100%;
-    }
-    .action-card.recommended {
-        border: 2px solid #2563eb;
-        background: #f8faff;
-    }
-    .badge-optimal {
-        background: #2563eb;
-        color: #ffffff;
-        font-size: 0.7rem;
-        font-weight: 700;
-        padding: 2px 7px;
-        border-radius: 4px;
-        float: right;
-    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -349,43 +328,47 @@ st.markdown(f"""
 # Top 4 Clean KPIs
 c1, c2, c3, c4 = st.columns(4)
 with c1:
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Monitored Shipments</div>
-        <div class="metric-value">{len(df_fleet):,}</div>
-        <div class="metric-sub">Active Fleet Tracking</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="metric-card">'
+        f'<div class="metric-label">Monitored Shipments</div>'
+        f'<div class="metric-value">{len(df_fleet):,}</div>'
+        f'<div class="metric-sub">Active Fleet Tracking</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
 with c2:
     at_risk = len(df_fleet[df_fleet['risk_tier'].isin(['CRITICAL', 'HIGH'])])
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">At-Risk Shipments</div>
-        <div class="metric-value" style="color:#dc2626;">{at_risk:,}</div>
-        <div class="metric-sub">Requires Intervention</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="metric-card">'
+        f'<div class="metric-label">At-Risk Shipments</div>'
+        f'<div class="metric-value" style="color:#dc2626;">{at_risk:,}</div>'
+        f'<div class="metric-sub">Requires Intervention</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
 with c3:
     loss_prev = analytics.get("total_loss_prevented", 0.0) * USD_TO_INR
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Financial Loss Prevented</div>
-        <div class="metric-value" style="color:#059669;">₹{loss_prev:,.0f}</div>
-        <div class="metric-sub">Realized Financial Savings</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="metric-card">'
+        f'<div class="metric-label">Financial Loss Prevented</div>'
+        f'<div class="metric-value" style="color:#059669;">₹{loss_prev:,.0f}</div>'
+        f'<div class="metric-sub">Realized Financial Savings</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
 with c4:
     avg_roi = analytics.get("avg_decision_roi_pct", 0.0)
-    st.markdown(f"""
-    <div class="metric-card">
-        <div class="metric-label">Realized Decision ROI</div>
-        <div class="metric-value" style="color:#2563eb;">{avg_roi:.1f}%</div>
-        <div class="metric-sub">Closed-Loop Capital Return</div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="metric-card">'
+        f'<div class="metric-label">Realized Decision ROI</div>'
+        f'<div class="metric-value" style="color:#2563eb;">{avg_roi:.1f}%</div>'
+        f'<div class="metric-sub">Closed-Loop Capital Return</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
 st.write("")
 
@@ -466,36 +449,37 @@ with tab_decisions:
 
     # Clean, modern shipment summary card
     risk_class = str(selected_row['risk_tier']).lower() if pd.notnull(selected_row['risk_tier']) else 'low'
-    st.markdown(f"""
-    <div class="shipment-summary-card">
-        <div class="summary-left">
-            <div class="summary-id-row">
-                <span class="shipment-badge">{selected_row['shipment_id']}</span>
-                <span class="risk-badge risk-{risk_class}">{selected_row['risk_tier']} RISK</span>
-                <span class="status-pill">{selected_row['current_status']}</span>
-            </div>
-            <div class="summary-meta">
-                <span>Category: <strong>{selected_row['category_name']}</strong></span>
-                <span>•</span>
-                <span>Mode: <strong>{selected_row['shipping_mode']}</strong></span>
-            </div>
-        </div>
-        <div class="summary-right">
-            <div class="summary-stat">
-                <div class="stat-label">Order Value</div>
-                <div class="stat-val">₹{order_total_inr:,.0f}</div>
-            </div>
-            <div class="summary-stat">
-                <div class="stat-label">Predicted Delay</div>
-                <div class="stat-val stat-danger">{selected_row['predicted_delay_days']:.1f} days late</div>
-            </div>
-            <div class="summary-stat">
-                <div class="stat-label">Disruption Probability</div>
-                <div class="stat-val stat-prob">{selected_row['delay_probability']:.1%}</div>
-            </div>
-        </div>
-    </div>
-    """, unsafe_allow_html=True)
+    st.markdown(
+        f'<div class="shipment-summary-card">'
+        f'<div class="summary-left">'
+        f'<div class="summary-id-row">'
+        f'<span class="shipment-badge">{selected_row["shipment_id"]}</span>'
+        f'<span class="risk-badge risk-{risk_class}">{selected_row["risk_tier"]} RISK</span>'
+        f'<span class="status-pill">{selected_row["current_status"]}</span>'
+        f'</div>'
+        f'<div class="summary-meta">'
+        f'<span>Category: <strong>{selected_row["category_name"]}</strong></span>'
+        f'<span>•</span>'
+        f'<span>Mode: <strong>{selected_row["shipping_mode"]}</strong></span>'
+        f'</div>'
+        f'</div>'
+        f'<div class="summary-right">'
+        f'<div class="summary-stat">'
+        f'<div class="stat-label">Order Value</div>'
+        f'<div class="stat-val">₹{order_total_inr:,.0f}</div>'
+        f'</div>'
+        f'<div class="summary-stat">'
+        f'<div class="stat-label">Predicted Delay</div>'
+        f'<div class="stat-val stat-danger">{selected_row["predicted_delay_days"]:.1f} days late</div>'
+        f'</div>'
+        f'<div class="summary-stat">'
+        f'<div class="stat-label">Disruption Probability</div>'
+        f'<div class="stat-val stat-prob">{selected_row["delay_probability"]:.1%}</div>'
+        f'</div>'
+        f'</div>'
+        f'</div>',
+        unsafe_allow_html=True
+    )
 
     # Solve prescriptions
     solver = PrescriptiveSolver()
@@ -525,47 +509,68 @@ with tab_decisions:
             savings_inr = p['net_financial_benefit'] * USD_TO_INR
             budget_label = "✅ In Budget" if p['satisfies_budget'] else "⚠️ Over Cap"
 
-            st.markdown(f"""
-            <div class="{card_class}">
-                <div>
-                    <div class="tile-header">
-                        <div>
-                            <div class="tile-title">{p['title']}</div>
-                            <div class="tile-type">{p['strategy_type']}</div>
-                        </div>
-                        {badge}
-                    </div>
-                    <div class="tile-hero">
-                        <div>
-                            <div class="grid-label">Net Savings</div>
-                            <div class="hero-savings">+₹{savings_inr:,.0f}</div>
-                        </div>
-                        <div style="text-align:right;">
-                            <div class="grid-label">Projected ROI</div>
-                            <div class="hero-roi">+{p['roi_pct']:.0f}%</div>
-                        </div>
-                    </div>
-                    <div class="tile-grid">
-                        <div>
-                            <div class="grid-label">Expedite Cost</div>
-                            <div class="grid-val">₹{cost_inr:,.0f}</div>
-                        </div>
-                        <div>
-                            <div class="grid-label">Time Saved</div>
-                            <div class="grid-val">{p['days_saved']:.1f} days</div>
-                        </div>
-                        <div>
-                            <div class="grid-label">SLA Adherence</div>
-                            <div class="grid-val">{p['sla_compliance_rate']}%</div>
-                        </div>
-                        <div>
-                            <div class="grid-label">Feasibility</div>
-                            <div class="grid-val">{budget_label}</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            """, unsafe_allow_html=True)
+            if savings_inr > 0:
+                savings_color = "#059669"
+                savings_disp = f"+₹{savings_inr:,.0f}"
+            elif savings_inr < 0:
+                savings_color = "#dc2626"
+                savings_disp = f"-₹{abs(savings_inr):,.0f}"
+            else:
+                savings_color = "#64748b"
+                savings_disp = "₹0"
+
+            if p['roi_pct'] > 0:
+                roi_color = "#2563eb"
+                roi_disp = f"+{p['roi_pct']:.0f}%"
+            elif p['roi_pct'] < 0:
+                roi_color = "#dc2626"
+                roi_disp = f"{p['roi_pct']:.0f}%"
+            else:
+                roi_color = "#64748b"
+                roi_disp = "0%"
+
+            tile_html = (
+                f'<div class="{card_class}">'
+                f'<div>'
+                f'<div class="tile-header">'
+                f'<div>'
+                f'<div class="tile-title">{p["title"]}</div>'
+                f'<div class="tile-type">{p["strategy_type"]}</div>'
+                f'</div>'
+                f'{badge}'
+                f'</div>'
+                f'<div class="tile-hero">'
+                f'<div>'
+                f'<div class="grid-label">Net Savings</div>'
+                f'<div class="hero-savings" style="color:{savings_color};">{savings_disp}</div>'
+                f'</div>'
+                f'<div style="text-align:right;">'
+                f'<div class="grid-label">Projected ROI</div>'
+                f'<div class="hero-roi" style="color:{roi_color};">{roi_disp}</div>'
+                f'</div>'
+                f'</div>'
+                f'<div class="tile-grid">'
+                f'<div>'
+                f'<div class="grid-label">Expedite Cost</div>'
+                f'<div class="grid-val">₹{cost_inr:,.0f}</div>'
+                f'</div>'
+                f'<div>'
+                f'<div class="grid-label">Time Saved</div>'
+                f'<div class="grid-val">{p["days_saved"]:.1f} days</div>'
+                f'</div>'
+                f'<div>'
+                f'<div class="grid-label">SLA Adherence</div>'
+                f'<div class="grid-val">{p["sla_compliance_rate"]}%</div>'
+                f'</div>'
+                f'<div>'
+                f'<div class="grid-label">Feasibility</div>'
+                f'<div class="grid-val">{budget_label}</div>'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+                f'</div>'
+            )
+            st.markdown(tile_html, unsafe_allow_html=True)
 
             btn_label = f"⚡ Execute {p['title']}" if is_rec else f"Execute {p['title']}"
             btn_type = "primary" if is_rec else "secondary"
